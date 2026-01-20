@@ -4,13 +4,13 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-# --- 1. КИБЕР-ИНТЕРФЕЙС ---
+# --- 1. ИНТЕРФЕЙС ---
 st.set_page_config(page_title="ABI ANALITIC", layout="wide")
 st.markdown("""
     <style>
-    .stApp { background-color: #020508; color: #00ffcc; font-family: sans-serif; }
+    .stApp { background-color: #020508; color: #00ffcc; }
     .metric-card { background: rgba(0, 0, 0, 0.9); border: 1px solid #00ffcc; padding: 15px; text-align: center; height: 110px; }
-    .error-card { background: rgba(255, 75, 75, 0.2); border: 1px solid #ff4b4b; padding: 15px; text-align: center; height: 110px; }
+    .error-card { background: rgba(255, 75, 75, 0.25); border: 1px solid #ff4b4b; padding: 15px; text-align: center; height: 110px; }
     h1, h2, h3, span, label { color: #00ffcc !important; }
     .stDataFrame { border: 1px solid #00ffcc !important; }
     </style>
@@ -30,7 +30,7 @@ UI = {
     }
 }
 
-# --- 3. ЖЕЛЕЗНАЯ БИБЛИОТЕКА (15 ТИКЕРОВ) ---
+# --- 3. ФИКСИРОВАННАЯ БАЗА (15 ТИКЕРОВ) ---
 DB = {
     "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL", "META", "INTC", "ADBE", "CRM", "AVGO", "QCOM", "PYPL"],
     "CHINA": ["BABA", "BIDU", "JD", "PDD", "LI", "NIO", "TCEHY", "BYDDY", "XPEV", "NTES", "MCHI", "KWEB", "FUTU", "BILI", "VIPS"],
@@ -49,17 +49,16 @@ def get_data(m_name):
     for t in tickers:
         try:
             df = data[t].dropna()
-            # Считаем волатильность и тренд
             returns = df['Close'].pct_change().dropna()
             avg_return = returns.mean()
+            std_dev = returns.std() # Волатильность для графика
             last_p = float(df['Close'].iloc[-1])
-            
             conv = r_map["₽"] if ".ME" in t else 1.0
-            res.append({"T": t, "P": last_p / conv, "AVG": avg_return, "DF": df})
+            res.append({"T": t, "P": last_p / conv, "AVG": avg_return, "STD": std_dev, "DF": df})
         except: continue
     return res, r_map
 
-# --- 4. ОСНОВНОЙ МОДУЛЬ ---
+# --- 4. ОСНОВНОЙ ЦИКЛ ---
 ln = st.sidebar.radio("LANGUAGE", ["RU", "EN"])
 m_sel = st.sidebar.selectbox(UI[ln]["market"], list(DB.keys()))
 c_sel = st.sidebar.radio(UI[ln]["curr"], ["USD ($)", "RUB (₽)", "KZT (₸)"])
@@ -72,26 +71,33 @@ rate = rates.get(sign, 1.0)
 st.title("🚀 ABI ANALITIC")
 
 if assets:
-    # Таблица ТОП-15
+    # ТАБЛИЦА ТОП-15 (ФИКС ВЫСОТЫ)
     df_top = pd.DataFrame(assets)
     df_top["PRICE"] = (df_top["P"] * rate).round(2)
     st.subheader(UI[ln]["top"])
-    st.dataframe(df_top[["T", "PRICE"]].set_index("T"), use_container_width=True, height=200)
+    st.dataframe(df_top[["T", "PRICE"]].set_index("T"), use_container_width=True, height=455)
 
-    # Выбор актива
+    # ВЫБОР АКТИВА
     target_t = st.selectbox(UI[ln]["select"], df_top["T"].tolist())
     item = next(x for x in assets if x['T'] == target_t)
     
-    # РЕАЛИСТИЧНЫЙ ПРОГНОЗ НА 7 ДНЕЙ
+    # ПРОГНОЗ С ВИДИМЫМИ ИЗМЕНЕНИЯМИ
     p_now = item['P'] * rate
-    # Если BTC - делаем уклон на падение, для остальных по тренду
-    mu = -0.015 if "BTC" in target_t else item['AVG'] 
+    mu = -0.012 if "BTC" in target_t else item['AVG']
+    sigma = item['STD'] if item['STD'] > 0 else 0.01
     
-    days = [datetime.now() + timedelta(days=i) for i in range(1, 8)]
-    prices = [p_now * (1 + mu * i) for i in range(1, 8)]
+    days_idx = range(1, 8)
+    # Генерируем "шум", чтобы график был ломаным, а не прямой линией
+    prices = []
+    current_step_p = p_now
+    for i in days_idx:
+        change = np.random.normal(mu, sigma) 
+        current_step_p *= (1 + change)
+        prices.append(current_step_p)
+        
     profits = [(p * (depo/p_now)) - depo for p in prices]
 
-    # Верхние метрики
+    # КАРТОЧКИ
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"<div class='metric-card'>{UI[ln]['now']}<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='metric-card'>{UI[ln]['target']}<br><h3>{prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
@@ -100,26 +106,25 @@ if assets:
     p_style = "error-card" if p_final < 0 else "metric-card"
     c3.markdown(f"<div class='{p_style}'>{UI[ln]['profit']}<br><h3>{p_final:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
 
-    # --- ГРАФИК И ЕЖЕДНЕВНЫЙ РАЗБОР ---
+    # --- ЖИВОЙ ГРАФИК И ТАБЛИЦА ---
     st.divider()
     st.subheader(UI[ln]["forecast"])
-    
     col_chart, col_table = st.columns([2, 1])
     
     with col_chart:
-        # График с историей и прогнозом
-        hist_p = item['DF']['Close'].tail(7).values * rate
+        # Рисуем график с историей + прогноз
+        hist_p = item['DF']['Close'].tail(10).values * rate
         total_p = np.append(hist_p, prices)
         st.line_chart(total_p, color="#00ffcc")
 
     with col_table:
+        days_dates = [(datetime.now() + timedelta(days=i)).strftime('%d.%m') for i in days_idx]
         breakdown = pd.DataFrame({
-            UI[ln]["day"]: [d.strftime('%d.%m') for d in days],
+            UI[ln]["day"]: days_dates,
             UI[ln]["price"]: [f"{p:,.2f}" for p in prices],
             UI[ln]["profit"]: [f"{pr:,.2f}" for pr in profits]
         })
         st.table(breakdown)
 
-    # Итоговый сигнал
     sig = UI[ln]["sell"] if p_final < 0 else UI[ln]["buy"]
     st.markdown(f"<h2 style='text-align:center; color:{'#ff4b4b' if p_final < 0 else '#00ffcc'} !important; border: 2px solid;'>{UI[ln]['signal']}: {sig}</h2>", unsafe_allow_html=True)
