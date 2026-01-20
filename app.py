@@ -5,7 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 
-# --- LUXURY DESIGN ---
+# --- ГЛОБАЛЬНЫЙ ДИЗАЙН И ФОН ---
 st.set_page_config(page_title="ABI Terminal", layout="wide")
 st.markdown("""
     <style>
@@ -19,29 +19,46 @@ st.markdown("""
         padding: 20px; border-radius: 15px; backdrop-filter: blur(10px);
     }
     h1, h3 { color: #00ffcc !important; text-shadow: 0 0 10px #00ffcc; }
+    /* Стили для кастомного меню */
+    .nav-menu {
+        display: flex; justify-content: space-around;
+        background: rgba(0, 255, 204, 0.1); padding: 10px;
+        border-radius: 10px; border: 1px solid rgba(0, 255, 204, 0.3);
+        margin-bottom: 25px;
+    }
     </style>
+    """, unsafe_allow_html=True)
+
+# --- ВЕРХНЕЕ МЕНЮ ---
+st.markdown("""
+    <div class="nav-menu">
+        <span style="color: #00ffcc; font-weight: bold;">🏠 ТЕРМИНАЛ</span>
+        <span style="color: #888;">📈 АНАЛИТИКА (Soon)</span>
+        <span style="color: #888;">🎓 ОБУЧЕНИЕ (Soon)</span>
+        <span style="color: #888;">⚙️ НАСТРОЙКИ</span>
+    </div>
     """, unsafe_allow_html=True)
 
 st.title("🛡️ ABI: GLOBAL QUANTUM TERMINAL")
 
-# --- SIDEBAR: ВАЛЮТЫ ---
+# --- ЛОГИКА ВАЛЮТ (SideBar) ---
 st.sidebar.header("🏦 Капитал")
 budget_base = st.sidebar.number_input("Ваш капитал ($)", value=1000, step=100)
-currency = st.sidebar.radio("Валюта:", ["USD ($)", "RUB (₽)", "KZT (₸)"])
+currency = st.sidebar.radio("Валюта терминала:", ["USD ($)", "RUB (₽)", "KZT (₸)"])
 
 @st.cache_data(ttl=3600)
-def get_rates():
+def get_live_rates():
     try:
-        r = yf.download(["RUB=X", "KZT=X"], period="1d")['Close'].iloc[-1]
+        r = yf.download(["RUB=X", "KZT=X"], period="1d", progress=False)['Close'].iloc[-1]
         return {"₽": float(r["RUB=X"]), "₸": float(r["KZT=X"]), "$": 1.0}
     except:
-        return {"₽": 91.5, "₸": 480.0, "$": 1.0}
+        return {"₽": 91.5, "₸": 485.0, "$": 1.0}
 
-rates = get_rates()
+rates = get_live_rates()
 curr_sym = currency.split("(")[1][0]
 rate_to_use = rates[curr_sym]
 
-# --- ГЛОБАЛЬНОЕ МЕНЮ РЕГИОНОВ ---
+# --- ВЫБОР РЫНКА (SideBar) ---
 st.sidebar.header("🌍 Рынки")
 market = st.sidebar.selectbox("Регион:", ["USA", "RF (Россия)", "KAZ (Казахстан)", "CHINA (Китай)", "EUROPE (Европа)", "CRYPTO"])
 
@@ -63,7 +80,6 @@ def load_data(tickers):
             df = data[t].dropna() if len(tickers.split()) > 1 else data.dropna()
             if df.empty: continue
             p_raw = float(df['Close'].iloc[-1])
-            # Конвертируем всё в USD для базы
             p_usd = p_raw / (rates["₽"] if ".ME" in t else rates["₸"] if (".KZ" in t or "KCZ" in t) else 1)
             results.append({
                 "ticker": t, "p_usd": p_usd, 
@@ -76,13 +92,11 @@ def load_data(tickers):
 
 assets = load_data(MARKETS[market])
 
-if not assets:
-    st.error("Данные для этого региона временно недоступны. Попробуйте другой.")
-else:
+if assets:
     df_view = pd.DataFrame(assets)
     df_view["Цена"] = (df_view["p_usd"] * rate_to_use).round(2)
     
-    st.subheader(f"📊 Листинг: {market}")
+    st.subheader(f"📊 Мониторинг: {market}")
     st.dataframe(df_view[["ticker", "Цена"]].rename(columns={"Цена": f"Цена ({curr_sym})"}), use_container_width=True)
 
     st.divider()
