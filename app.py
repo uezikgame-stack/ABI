@@ -11,47 +11,44 @@ st.set_page_config(page_title="ABI Terminal", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; }
-    /* Стиль для полноценного отображения названий */
-    .stDataFrame div[data-testid="stTable"] { width: 100%; }
     .metric-card {
         background: rgba(10, 15, 25, 0.95); border-left: 5px solid #00ffcc;
         padding: 20px; border-radius: 10px; margin-bottom: 10px;
+    }
+    .recommendation-box {
+        text-align: center; padding: 20px; border-radius: 10px;
+        font-size: 28px; font-weight: bold; margin-top: 20px;
+        border: 2px solid;
     }
     h1, h2, h3 { color: #00ffcc !important; font-family: 'Courier New', monospace; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- ВОЗВРАЩЕНИЕ ДИНОЗАВРИКА (ФИКСИРОВАННЫЙ ЛОАДЕР) ---
-# Теперь он будет появляться ВСЕГДА при инициализации или смене рынка
-def run_dino_loader():
+# --- ФУНКЦИЯ ДЛЯ ДИНОЗАВРИКА (ВСЕГДА ПРИ ОБНОВЛЕНИИ) ---
+def show_dino_loader():
     placeholder = st.empty()
     with placeholder.container():
         st.markdown("""
             <div style="background-color: white; height: 100vh; width: 100vw; position: fixed; top: 0; left: 0; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                <h1 style="color: black !important; font-family: 'Courier New', monospace; margin-bottom: 20px;">ABI QUANTUM LOADING...</h1>
-                <img src="https://i.gifer.com/V96u.gif" width="300">
-                <p style="color: #444; font-size: 20px; margin-top: 30px; font-weight: bold;">ПОДГОТОВКА ДАННЫХ ТОП-25...</p>
+                <h1 style="color: black !important; font-family: 'Arial'; margin-bottom: 20px;">ABI QUANTUM LOADING...</h1>
+                <img src="https://i.gifer.com/V96u.gif" width="280">
+                <p style="color: #555; font-size: 20px; margin-top: 30px;">Синхронизация данных ТОП-25...</p>
             </div>
             """, unsafe_allow_html=True)
-        time.sleep(3) # Увеличил время, чтобы ты успел насладиться динозавриком
+        time.sleep(2.5) # Время показа динозаврика
     placeholder.empty()
 
-if 'first_run' not in st.session_state:
-    run_dino_loader()
-    st.session_state.first_run = True
-
-# --- РЫНКИ (ТОП-25) ---
+# --- ЛОГИКА ДАННЫХ ---
 MARKETS = {
     "USA": "AAPL NVDA TSLA MSFT AMZN AMD NFLX GOOGL META INTC ADBE CRM AVGO QCOM PYPL TSMC ASML BABA COST PEP NKE TM ORCL MCD DIS",
-    "RF (Россия)": "SBER.ME GAZP.ME LKOH.ME YNDX ROSN.ME MGNT.ME NVTK.ME GMKN.ME TATN.ME CHMF.ME ALRS.ME MTSS.ME PLZL.ME MOEX.ME SNGS.ME MAGN.ME AFLT.ME RTKM.ME FEES.ME CBOM.ME AFKS.ME LENT.ME VTBR.ME GAZP.ME TRNFP.ME",
-    "CHINA": "BABA BIDU JD PDD LI NIO TCEHY BYDDY XPEV NTES MCHI KWEB FUTU BILI VIPS KC TME IQ EH ZLAB GDS LI ANGI TAL EDU",
-    "EUROPE": "ASML MC.PA VOW3.DE NESN.SW SIE.DE SAP.DE AIR.PA RMS.PA MBG.DE DHL.DE SAN.MC ALV.DE CS.PA BBVA.MC NOVO-B.CO LVMUY AD.AS",
-    "KAZ (Казахстан)": "KCZ.L KMGZ.KZ HSBK.KZ KCELL.KZ NAC.KZ CCBN.KZ KZAP.KZ KEGC.KZ KZTK.KZ KZTO.KZ ASBN.KZ BAST.KZ KMGD.KZ",
-    "CRYPTO": "BTC-USD ETH-USD SOL-USD DOT-USD ADA-USD XRP-USD LINK-USD AVAX-USD DOGE-USD MATIC-USD TRX-USD LTC-USD UNI-USD SHIB-USD NEAR-USD ATOM-USD"
+    "RF (Россия)": "SBER.ME GAZP.ME LKOH.ME YNDX ROSN.ME MGNT.ME NVTK.ME GMKN.ME TATN.ME CHMF.ME ALRS.ME MTSS.ME PLZL.ME MOEX.ME SNGS.ME MAGN.ME AFLT.ME RTKM.ME FEES.ME CBOM.ME",
+    "CHINA": "BABA BIDU JD PDD LI NIO TCEHY BYDDY XPEV NTES MCHI KWEB FUTU BILI VIPS KC TME IQ EH ZLAB GDS",
+    "EUROPE": "ASML MC.PA VOW3.DE NESN.SW SIE.DE SAP.DE AIR.PA RMS.PA MBG.DE DHL.DE SAN.MC ALV.DE CS.PA BBVA.MC NOVO-B.CO",
+    "CRYPTO": "BTC-USD ETH-USD SOL-USD DOT-USD ADA-USD XRP-USD LINK-USD AVAX-USD DOGE-USD MATIC-USD TRX-USD LTC-USD"
 }
 
 @st.cache_data(ttl=300)
-def fetch_data(m_name):
+def load_data(m_name):
     tickers = MARKETS[m_name]
     data = yf.download(tickers, period="1y", group_by='ticker', progress=False)
     rates = yf.download(["RUB=X", "KZT=X"], period="1d", progress=False)['Close']
@@ -66,75 +63,83 @@ def fetch_data(m_name):
             conv = r_map["₽"] if is_rub else r_map["₸"] if is_kzt else 1.0
             res.append({
                 "Asset": t,
-                "Price_USD": float(df['Close'].iloc[-1]) / conv,
-                "History": (df['Close'].values / conv)[-30:],
-                "Vol": float(df['Close'].pct_change().std()),
-                "Trend": (df['Close'].iloc[-1] - df['Close'].iloc[-15]) / conv / 15
+                "p_usd": float(df['Close'].iloc[-1]) / conv,
+                "hist": (df['Close'].values / conv)[-30:],
+                "vol": float(df['Close'].pct_change().std()),
+                "trend": (df['Close'].iloc[-1] - df['Close'].iloc[-15]) / conv / 15
             })
         except: continue
     return res, r_map
 
 # --- БОКОВАЯ ПАНЕЛЬ ---
 st.sidebar.title("🛡️ ABI CONTROL")
-m_select = st.sidebar.selectbox("РЕГИОН:", list(MARKETS.keys()))
+m_sel = st.sidebar.selectbox("ВЫБОР РЫНКА:", list(MARKETS.keys()))
 
-# Если сменили регион — запускаем динозавра
-if 'last_m' not in st.session_state or st.session_state.last_m != m_select:
-    run_dino_loader()
-    st.session_state.last_m = m_select
+# Триггер динозаврика при смене рынка
+if 'm_key' not in st.session_state or st.session_state.m_key != m_sel:
+    show_dino_loader()
+    st.session_state.m_key = m_sel
 
-c_select = st.sidebar.radio("ВАЛЮТА:", ["USD ($)", "RUB (₽)", "KZT (₸)"])
-capital = st.sidebar.number_input("КАПИТАЛ:", value=1000)
+curr_sel = st.sidebar.radio("ВАЛЮТА:", ["USD ($)", "RUB (₽)", "KZT (₸)"])
+capital = st.sidebar.number_input("ВАШ КАПИТАЛ:", value=1000)
 
-assets, rates_map = fetch_data(m_select)
-curr_char = c_select.split("(")[1][0]
-rate = rates_map[curr_char]
+assets, rates = load_data(m_sel)
+c_sym = curr_sel.split("(")[1][0]
+r_val = rates[c_sym]
 
-# --- ГЛАВНЫЙ ЭКРАН ---
-st.title(f"🚀 TOP-25: {m_select}")
+# --- ИНТЕРФЕЙС ---
+st.title(f"🚀 ABI QUANTUM: {m_sel}")
 
 if assets:
-    # 1. ЧЕТКИЙ НУМЕРОВАННЫЙ ТОП
-    st.markdown("### 🏆 РЕЙТИНГ АКТИВОВ")
+    # 1. НУМЕРОВАННЫЙ ТОП-25
+    st.subheader("🏆 ТОП-25 АКТИВОВ")
     df_top = pd.DataFrame(assets).head(25)
-    df_top["Цена"] = (df_top["Price_USD"] * rate).round(2)
-    
-    # Добавляем номера (1, 2, 3...)
+    df_top["Цена"] = (df_top["p_usd"] * r_val).round(2)
     df_top.index = np.arange(1, len(df_top) + 1)
     df_top.index.name = "№"
-    
-    # Показываем таблицу (увеличил высоту, чтобы названия не жались)
-    st.dataframe(df_top[["Asset", "Цена"]], height=400, use_container_width=True)
+    st.dataframe(df_top[["Asset", "Цена"]], use_container_width=True, height=350)
 
     st.divider()
 
-    # 2. АНАЛИЗ
-    target = st.selectbox("ВЫБЕРИТЕ ИЗ ТОПА ДЛЯ ПРОГНОЗА:", df_top["Asset"].tolist())
+    # 2. АНАЛИЗ И СИГНАЛЫ
+    target = st.selectbox("ВЫБЕРИТЕ АКТИВ:", df_top["Asset"].tolist())
     item = next(a for a in assets if a['Asset'] == target)
     
-    p_now = item['Price_USD'] * rate
+    p_now = item['p_usd'] * r_val
     np.random.seed(42)
     forecast = [p_now]
     for _ in range(1, 15):
-        noise = np.random.normal(0, p_now * item['Vol'] * 0.5)
-        forecast.append(max(forecast[-1] + (item['Trend'] * rate) + noise, 0.01))
+        noise = np.random.normal(0, p_now * item['vol'] * 0.5)
+        forecast.append(max(forecast[-1] + (item['trend'] * r_val) + noise, 0.01))
 
-    # Виджеты
+    # Метрики
     diff = ((forecast[-1]/p_now)-1)*100
-    clr = "#00ffcc" if diff > 2 else "#ff4b4b" if diff < -2 else "gray"
-    
+    if diff > 3:
+        signal, color = "ПОКУПАТЬ 🟢", "#00ffcc"
+    elif diff < -3:
+        signal, color = "ПРОДАВАТЬ 🔴", "#ff4b4b"
+    else:
+        signal, color = "УДЕРЖИВАТЬ 🟡", "#888888"
+
     c1, c2, c3 = st.columns(3)
-    c1.markdown(f"<div class='metric-card'>ЦЕНА<br><h2>{p_now:,.2f} {curr_char}</h2></div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='metric-card'>ЦЕЛЬ 14Д<br><h2 style='color:{clr} !important;'>{forecast[-1]:,.2f} {curr_char}</h2></div>", unsafe_allow_html=True)
+    c1.markdown(f"<div class='metric-card'>СЕЙЧАС<br><h2>{p_now:,.2f} {c_sym}</h2></div>", unsafe_allow_html=True)
+    c2.markdown(f"<div class='metric-card'>ЦЕЛЬ (14Д)<br><h2 style='color:{color} !important;'>{forecast[-1]:,.2f} {c_sym}</h2></div>", unsafe_allow_html=True)
     
-    gain = (forecast[-1] * (capital/p_now * rate)) - (capital * rate)
-    c3.markdown(f"<div class='metric-card'>ВАШ ПРОФИТ<br><h2>{gain:,.2f} {curr_char}</h2></div>", unsafe_allow_html=True)
+    profit = (forecast[-1] * (capital/p_now * r_val)) - (capital * r_val)
+    c3.markdown(f"<div class='metric-card'>ПРОФИТ<br><h2>{profit:,.2f} {c_sym}</h2></div>", unsafe_allow_html=True)
 
     # ГРАФИК
     fig, ax = plt.subplots(figsize=(12, 4), facecolor='none')
     ax.set_facecolor('none')
-    h_vals = [x * rate for x in item['History']]
-    ax.plot(range(len(h_vals)), h_vals, color='white', alpha=0.3)
-    ax.plot(range(len(h_vals)-1, len(h_vals)+14), forecast, color=clr, linewidth=4, marker='o')
+    h_data = [x * r_val for x in item['hist']]
+    ax.plot(range(len(h_data)), h_data, color='white', alpha=0.3)
+    ax.plot(range(len(h_data)-1, len(h_data)+14), forecast, color=color, linewidth=4, marker='o')
     ax.tick_params(colors='white')
     st.pyplot(fig)
+
+    # 3. КРУПНАЯ НАДПИСЬ РЕКОМЕНДАЦИИ
+    st.markdown(f"""
+        <div class="recommendation-box" style="color: {color}; border-color: {color};">
+            РЕКОМЕНДАЦИЯ: {signal}
+        </div>
+    """, unsafe_allow_html=True)
