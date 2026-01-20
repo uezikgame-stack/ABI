@@ -4,11 +4,24 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Убираем лишние отступы и скрываем мусор
+# Настройка стиля и скрытие мусора
 st.set_page_config(page_title="ABI Terminal", layout="wide")
-st.markdown("<style>#MainMenu {visibility: hidden;} footer {visibility: hidden;}</style>", unsafe_allow_html=True)
+st.markdown("""
+    <style>
+    .main { background-color: #0e1117; }
+    div[data-testid="metric-container"] {
+        background-color: #1e2130;
+        border: 1px solid #3d4466;
+        padding: 15px;
+        border-radius: 10px;
+        color: white;
+    }
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    </style>
+    """, unsafe_allow_html=True)
 
-st.title("🛡️ ABI: Analytics & Intelligence")
+st.title("🛡️ ABI: Smart Intelligence Terminal")
 
 # Панель управления
 st.sidebar.header("ABI Control Panel")
@@ -35,7 +48,8 @@ def load_abi_data(tickers):
             y = df['Close'].values
             x = np.arange(len(y))
             slope, _ = np.polyfit(x, y, 1)
-            results.append({"Тикер": t, "Цена": round(p, 2), "Тренд": slope, "Вол": float(df['Close'].pct_change().std())})
+            vol = float(df['Close'].pct_change().std())
+            results.append({"Тикер": t, "Цена": round(p, 2), "Тренд": slope, "Вол": vol})
         except: continue
     return results
 
@@ -43,47 +57,38 @@ assets = load_abi_data(MARKETS[market_choice])
 df_assets = pd.DataFrame(assets).sort_values(by="Цена", ascending=False).reset_index(drop=True)
 df_assets.index += 1 
 
-st.subheader(f"📊 Текущие котировки: {market_choice}")
+# Красивая таблица лидеров
+st.subheader(f"📊 Аналитический срез: {market_choice}")
 st.dataframe(df_assets[["Тикер", "Цена"]], use_container_width=True)
 
 st.divider()
-selected_ticker = st.selectbox("Выберите актив:", df_assets["Тикер"].tolist())
+selected_ticker = st.selectbox("Выберите актив для анализа:", df_assets["Тикер"].tolist())
 
 if selected_ticker:
     asset = next(item for item in assets if item["Тикер"] == selected_ticker)
-    asset_info = yf.Ticker(selected_ticker)
     
-    # Прогноз
+    # Расчет прогноза
     prices = [asset['Цена']]
     for _ in range(7):
         prices.append(prices[-1] + asset['Тренд'] * 0.2 + np.random.normal(0, asset['Цена'] * asset['Вол'] * 0.4))
     
-    st.write(f"### 🎯 Анализ {selected_ticker}")
-    c1, c2 = st.columns([2, 1])
+    # Дизайн верхних карточек
+    st.write(f"### 🎯 Статус и прогноз: {selected_ticker}")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Текущая цена", f"${asset['Цена']}")
     
-    with c1:
-        fig, ax = plt.subplots(figsize=(10, 4))
-        ax.plot(prices, marker='o', color='#28a745', label="Прогноз ABI")
-        ax.axhline(asset['Цена'], color='red', linestyle='--', label="Сейчас")
-        ax.legend()
-        st.pyplot(fig)
-        
-    with c2:
-        profit = (prices[-1] * (budget/asset['Цена'])) - budget
-        st.metric("Цена через неделю", f"${prices[-1]:.2f}")
-        st.metric("Чистый доход", f"${profit:.2f}", f"{((prices[-1]/asset['Цена'])-1)*100:.2f}%")
-        if profit > 0: st.success("🎯 РЕКОМЕНДАЦИЯ: ПОКУПАТЬ")
-        else: st.error("⚠️ РЕКОМЕНДАЦИЯ: ПРОДАВАТЬ")
+    target_price = round(prices[-1], 2)
+    change_pct = ((target_price / asset['Цена']) - 1) * 100
+    c2.metric("Цена через 7 дней", f"${target_price}", f"{change_pct:.2f}%")
+    
+    profit = (prices[-1] * (budget/asset['Цена'])) - budget
+    c3.metric("Ваша прибыль", f"${profit:.2f}")
 
-    # СКРЫТЫЙ БЛОК: НОВОСТИ (только если нажать)
-    with st.expander("🔍 Показать обоснование (Новости)"):
-        try:
-            news = asset_info.news
-            if news:
-                for n in news[:3]:
-                    st.write(f"**{n.get('title', 'Новость')}**")
-                    st.write(f"[Читать]({n.get('link', '#')})")
-            else:
-                st.write("Новостей нет.")
-        except:
-            st.write("Связь с новостями временно прервана.")
+    # График с новым цветом
+    col_chart, col_logic = st.columns([2, 1])
+    with col_chart:
+        fig, ax = plt.subplots(figsize=(10, 4), facecolor='#0e1117')
+        ax.set_facecolor('#0e1117')
+        ax.plot(prices, marker='o', color='#00ffcc', linewidth=2, label="Модель ABI")
+        ax.axhline(asset['Цена'], color='#ff4b4b', linestyle='--', alpha=0.6, label="Вход")
+        ax.tick_
