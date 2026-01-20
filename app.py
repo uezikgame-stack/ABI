@@ -1,139 +1,112 @@
 import streamlit as st
 import yfinance as yf
-import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+import numpy as np
 
-# --- 1. КИБЕРПАНК ДИЗАЙН (СЕТКА + БИТКОИНЫ) ---
-st.set_page_config(page_title="ABI Quantum Terminal", layout="wide")
+# --- 1. КИБЕР-ДИЗАЙН И СТАРЫЙ ШРИФТ ---
+st.set_page_config(page_title="ABI Terminal", layout="wide")
 
 st.markdown("""
     <style>
-    /* Фон с линиями и символами биткоина */
     .stApp {
         background-color: #020508;
-        background-image: 
-            linear-gradient(rgba(0, 255, 204, 0.05) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(0, 255, 204, 0.05) 1px, transparent 1px);
-        background-size: 30px 30px;
+        background-image: linear-gradient(0deg, transparent 24%, rgba(0, 255, 204, .05) 25%, rgba(0, 255, 204, .05) 26%, transparent 27%),
+                          linear-gradient(90deg, transparent 24%, rgba(0, 255, 204, .05) 25%, rgba(0, 255, 204, .05) 26%, transparent 27%);
+        background-size: 50px 50px;
         font-family: 'Courier New', Courier, monospace !important;
     }
-    
-    /* Неоновые карточки */
-    .metric-card {
-        background: rgba(0, 0, 0, 0.8);
-        border: 1px solid #00ffcc;
-        box-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
-        padding: 20px;
-        border-radius: 5px;
-        text-align: center;
-    }
-
-    /* Цвета для сигналов */
-    .buy { color: #00ffcc !important; text-shadow: 0 0 10px #00ffcc; }
-    .sell { color: #ff3333 !important; text-shadow: 0 0 10px #ff3333; }
-    
-    h1, h2, h3, p, span { 
+    h1, h2, h3, p, span, div, label { 
         color: #00ffcc !important; 
         font-family: 'Courier New', Courier, monospace !important; 
     }
-    
+    .metric-box {
+        border: 1px solid #00ffcc;
+        padding: 15px;
+        background: rgba(0,0,0,0.8);
+        text-align: center;
+    }
     .stDataFrame { border: 1px solid #00ffcc; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. БИБЛИОТЕКА (USA, CHINA, EUROPE, RF, KAZ, CRYPTO) ---
+# --- 2. ПОЛНАЯ БИБЛИОТЕКА (БЕЗ УРЕЗАНИЙ) ---
 MARKETS = {
-    "USA": "AAPL NVDA TSLA MSFT AMZN AMD NFLX GOOGL META INTC",
-    "CRYPTO": "BTC-USD ETH-USD SOL-USD DOT-USD ADA-USD XRP-USD",
-    "EUROPE": "ASML MC.PA VOW3.DE NESN.SW SIE.DE SAP.DE AIR.PA",
-    "CHINA": "BABA BIDU JD PDD LI NIO TCEHY BYDDY",
-    "RF (Россия)": "SBER.ME GAZP.ME LKOH.ME YNDX ROSN.ME MGNT.ME",
-    "KAZ (Казахстан)": "KCZ.L KMGZ.KZ HSBK.KZ KCELL.KZ NAC.KZ CCBN.KZ"
+    "USA": "AAPL NVDA TSLA MSFT AMZN AMD NFLX GOOGL META INTC ADBE CRM AVGO QCOM PYPL TSMC ASML COST PEP NKE TM",
+    "CHINA": "BABA BIDU JD PDD LI NIO TCEHY BYDDY XPEV NTES MCHI KWEB FUTU BILI",
+    "EUROPE": "ASML MC.PA VOW3.DE NESN.SW SIE.DE SAP.DE AIR.PA RMS.PA MBG.DE DHL.DE SAN.MC ALV.DE",
+    "RF (Россия)": "SBER.ME GAZP.ME LKOH.ME YNDX ROSN.ME MGNT.ME NVTK.ME GMKN.ME TATN.ME CHMF.ME",
+    "KAZ (Казахстан)": "KCZ.L KMGZ.KZ HSBK.KZ KCELL.KZ NAC.KZ CCBN.KZ KEGC.KZ KZTK.KZ",
+    "CRYPTO": "BTC-USD ETH-USD SOL-USD DOT-USD ADA-USD XRP-USD LINK-USD AVAX-USD"
 }
 
-@st.cache_data(ttl=300)
-def get_market_data(m_name):
+# --- 3. ЛОГИКА ЗАГРУЗКИ ---
+def get_data(market):
     try:
-        tickers = MARKETS[m_name]
-        data = yf.download(tickers, period="1y", group_by='ticker', progress=False)
-        # Получаем курсы валют, чтобы не было ошибок как на скриншотах
-        rates_data = yf.download(["RUB=X", "KZT=X"], period="1d", progress=False)['Close']
-        r_map = {"₽": float(rates_data["RUB=X"].iloc[-1]), "₸": float(rates_data["KZT=X"].iloc[-1]), "$": 1.0}
+        tickers = MARKETS[market]
+        data = yf.download(tickers, period="1mo", interval="1d", progress=False)['Close']
+        if data.empty: return None
         
-        assets = []
+        # Получаем курс для конвертации
+        rates = yf.download(["RUB=X", "KZT=X"], period="1d", progress=False)['Close']
+        r_map = {"$": 1.0, "₽": float(rates["RUB=X"].iloc[-1]), "₸": float(rates["KZT=X"].iloc[-1])}
+        
+        res = []
         for t in tickers.split():
             try:
-                df = data[t].dropna() if len(tickers.split()) > 1 else data.dropna()
-                if df.empty: continue
-                # Определяем валюту по тикеру
-                conv = r_map["₽"] if ".ME" in t else r_map["₸"] if (".KZ" in t or "KCZ" in t) else 1.0
-                assets.append({
-                    "ticker": t, "price": float(df['Close'].iloc[-1]) / conv,
-                    "hist": (df['Close'].values / conv)[-30:],
-                    "trend": (df['Close'].iloc[-1] - df['Close'].iloc[-15]) / conv / 15
-                })
+                p_usd = float(data[t].iloc[-1]) if len(tickers.split()) > 1 else float(data.iloc[-1])
+                # Упрощенная логика валюты тикера
+                if ".ME" in t: p_usd /= r_map["₽"]
+                if ".KZ" in t or "KCZ" in t: p_usd /= r_map["₸"]
+                
+                res.append({"Asset": t, "Price_USD": p_usd, "Trend": (data[t].iloc[-1] / data[t].iloc[0] - 1)})
             except: continue
-        return assets, r_map
-    except: return [], {"$": 1.0, "₽": 90.0, "₸": 450.0}
+        return res, r_map
+    except: return None, {}
 
-# --- 3. ИНТЕРФЕЙС ---
-st.sidebar.markdown("### ₿ ABI_CMD_V3")
-region = st.sidebar.selectbox("ВЫБЕРИ РЫНОК:", list(MARKETS.keys()))
-currency = st.sidebar.radio("ВАЛЮТА ТЕРМИНАЛА:", ["USD ($)", "RUB (₽)", "KZT (₸)"])
-user_cap = st.sidebar.number_input("ТВОЙ КАПИТАЛ:", value=1000)
+# --- 4. ИНТЕРФЕЙС ---
+st.sidebar.title("⌨️ ABI_CONTROL_V4")
+m_sel = st.sidebar.selectbox("РЫНОК:", list(MARKETS.keys()))
+c_sel = st.sidebar.radio("ВАЛЮТА:", ["USD ($)", "RUB (₽)", "KZT (₸)"])
+cap = st.sidebar.number_input("ДЕПОЗИТ:", value=1000)
 
-data_list, rates = get_market_data(region)
-curr_sign = currency.split("(")[1][0]
-rate_val = rates[curr_sign]
+assets, rates = get_data(m_sel)
+sign = c_sel.split("(")[1][0]
+rate = rates.get(sign, 1.0)
 
-# Динозаврик для стиля (как ты просил для РФ и КЗ)
-if region in ["RF (Россия)", "KAZ (Казахстан)"]:
-    st.sidebar.image("https://i.giphy.com/media/v1.Y2lkPTc5MGI3NjExYnZ6Zmt4bm1oZ3R0Z3R0Z3R0Z3R0Z3R0Z3R0Z3R0Z3R0Z3R0ZCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/10X22vczHTQMfK/giphy.gif", width=100)
+st.title(f"🚀 TERMINAL: {m_sel}")
 
-st.title(f"🚀 TERMINAL: {region}")
-
-if not data_list:
-    st.error("ОШИБКА ПОДКЛЮЧЕНИЯ. ПРОВЕРЬ VPN ИЛИ ИНТЕРНЕТ.")
+if assets is None:
+    # Твое требование: если не найдено - просто надпись
+    st.warning("ДАННЫЕ ПО РЕГИОНУ СЕЙЧАС НЕ ДОСТУПНЫ")
 else:
-    # Главная таблица
-    df_main = pd.DataFrame(data_list)
-    df_main["Цена"] = (df_main["price"] * rate_val).round(2)
-    st.dataframe(df_main[["ticker", "Цена"]].set_index("ticker").T, use_container_width=True)
+    # ТАБЛИЦА (ГОРИЗОНТАЛЬНАЯ)
+    df = pd.DataFrame(assets)
+    df["Цена"] = (df["Price_USD"] * rate).round(2)
+    st.subheader(f"📊 TOP ASSETS ({m_sel})")
+    st.dataframe(df[["Asset", "Цена"]].set_index("Asset").T, use_container_width=True)
 
-    # Анализ конкретного актива
-    target = st.selectbox("ВЫБЕРИ АКТИВ ДЛЯ ПРОГНОЗА:", df_main["ticker"].tolist())
-    item = next(x for x in data_list if x['ticker'] == target)
-    p_now = item['price'] * rate_val
+    # АНАЛИЗ
+    target = st.selectbox("ВЫБЕРИ АКТИВ:", df["Asset"].tolist())
+    item = next(x for x in assets if x['Asset'] == target)
+    p_now = item['Price_USD'] * rate
     
-    # Генерация прогноза (с учетом твоего "Биткоин на 7000")
-    forecast = [p_now]
-    for i in range(1, 15):
-        noise = np.random.normal(0, p_now * 0.02)
-        forecast.append(forecast[-1] + (item['trend'] * rate_val) + noise)
+    # Твоя идея с падением Биткоина на 7000
+    # Если это BTC, делаем медвежий прогноз для теста
+    trend_factor = -0.15 if "BTC" in target else item['Trend']
+    p_future = p_now * (1 + trend_factor)
 
-    # ЛОГИКА СИГНАЛА
-    diff = ((forecast[-1] / p_now) - 1) * 100
-    if diff > 3: rec, color = "ПОКУПАТЬ ✅", "#00ffcc"
-    elif diff < -3: rec, color = "ПРОДАВАТЬ ❌", "#ff3333"
-    else: rec, color = "УДЕРЖИВАТЬ 🛡️", "#888888"
+    # СИГНАЛЫ
+    if trend_factor > 0.02: status, s_color = "ПОКУПАТЬ", "#00ffcc"
+    elif trend_factor < -0.02: status, s_color = "ПРОДАВАТЬ", "#ff4b4b"
+    else: status, s_color = "УДЕРЖИВАТЬ", "#888888"
 
-    st.markdown(f"<h2 style='text-align:center; color:{color} !important; border: 2px solid {color}; padding: 10px;'>РЕКОМЕНДАЦИЯ: {rec}</h2>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='text-align:center; color:{s_color}; border:2px solid {s_color}; padding:10px;'>{status}</h2>", unsafe_allow_html=True)
 
-    # МЕТРИКИ (С КРАСНЫМ МИНУСОМ)
-    profit = (forecast[-1] * (user_cap / p_now)) - user_cap
-    profit_color = "#ff3333" if profit < 0 else "#00ffcc"
+    # МЕТРИКИ + ЦВЕТ ПРОФИТА (МИНУС = КРАСНЫЙ)
+    profit = (p_future * (cap/p_now)) - cap
+    p_color = "#ff4b4b" if profit < 0 else "#00ffcc"
 
-    c1, c2, c3 = st.columns(3)
-    c1.markdown(f"<div class='metric-card'>ТЕКУЩАЯ ЦЕНА<br><h2 class='buy'>{p_now:,.2f} {curr_sign}</h2></div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='metric-card'>ЦЕЛЬ (14 ДНЕЙ)<br><h2 class='buy'>{forecast[-1]:,.2f} {curr_sign}</h2></div>", unsafe_allow_html=True)
-    c3.markdown(f"<div class='metric-card'>ВАШ ПРОФИТ<br><h2 style='color:{profit_color} !important;'>{profit:,.2f} {curr_sign}</h2></div>", unsafe_allow_html=True)
-
-    # ГРАФИК
-    fig, ax = plt.subplots(figsize=(10, 4), facecolor='none')
-    ax.set_facecolor('none')
-    ax.plot(range(30), [x * rate_val for x in item['hist']], color='#00ffcc', label='История', alpha=0.5)
-    ax.plot(range(29, 44), forecast, color=color, linewidth=3, marker='o', label='Прогноз')
-    ax.tick_params(colors='#00ffcc')
-    for spine in ax.spines.values(): spine.set_color('#00ffcc')
-    st.pyplot(fig)
+    col1, col2, col3 = st.columns(3)
+    with col1: st.markdown(f"<div class='metric-box'>ТЕКУЩАЯ<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
+    with col2: st.markdown(f"<div class='metric-box'>ПРОГНОЗ<br><h3>{p_future:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
+    with col3: st.markdown(f"<div class='metric-box'>ПРОФИТ<br><h3 style='color:{p_color} !important;'>{profit:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
