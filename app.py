@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
+import streamlit.components.v1 as components
 
 # --- LUXURY DESIGN ---
 st.set_page_config(page_title="ABI Terminal", layout="wide")
@@ -33,8 +34,11 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- MENU ---
+# --- MENU & GAME ---
 st.markdown('<div class="nav-menu"><span style="color: #00ffcc;">🏠 ТЕРМИНАЛ</span><span style="color: #888;">📈 АНАЛИТИКА</span><span style="color: #888;">🎓 ОБУЧЕНИЕ</span></div>', unsafe_allow_html=True)
+
+with st.expander("🦖 ЗОНА ОТДЫХА: ИГРАТЬ В ДИНОЗАВРИКА"):
+    components.iframe("https://offline-dino-game.firebaseapp.com/", height=300)
 
 st.title("🛡️ ABI: GLOBAL QUANTUM TERMINAL")
 
@@ -55,29 +59,27 @@ rates = get_rates()
 curr_sym = currency.split("(")[1][0]
 rate_to_use = rates[curr_sym]
 
-st.sidebar.header("🌍 Рынки")
+st.sidebar.header("🌍 Рынки (Топ-15)")
 market = st.sidebar.selectbox("Регион:", ["USA", "RF (Россия)", "KAZ (Казахстан)", "CHINA (Китай)", "EUROPE (Европа)", "CRYPTO"])
 
-# Максимально полный список акций
+# --- ТОП-15 ПО ВСЕМ НАПРАВЛЕНИЯМ ---
 MARKETS = {
-    "USA": "AAPL NVDA TSLA MSFT AMZN AMD NFLX GOOGL META INTC ADBE CRM AVGO QCOM PYPL BABA JD NIO",
-    "RF (Россия)": "SBER.ME GAZP.ME LKOH.ME YNDX ROSN.ME MGNT.ME NVTK.ME GMKN.ME TATN.ME CHMF.ME ALRS.ME MTSS.ME",
-    "KAZ (Казахстан)": "KCZ.L KMGZ.KZ HSBK.KZ KCELL.KZ NAC.KZ CCBN.KZ KZAP.KZ",
-    "CHINA (Китай)": "BABA BIDU JD PDD LI NIO TCEHY BYDDY",
-    "EUROPE (Европа)": "ASML MC.PA VOW3.DE NESN.SW SIE.DE SAP.DE AIR.PA",
-    "CRYPTO": "BTC-USD ETH-USD SOL-USD DOT-USD ADA-USD XRP-USD"
+    "USA": "AAPL NVDA TSLA MSFT AMZN AMD NFLX GOOGL META INTC ADBE CRM AVGO QCOM PYPL",
+    "RF (Россия)": "SBER.ME GAZP.ME LKOH.ME YNDX ROSN.ME MGNT.ME NVTK.ME GMKN.ME TATN.ME CHMF.ME ALRS.ME MTSS.ME PLZL.ME MGNT.ME MOEX.ME",
+    "KAZ (Казахстан)": "KCZ.L KMGZ.KZ HSBK.KZ KCELL.KZ NAC.KZ CCBN.KZ KZAP.KZ KEGC.KZ KZTK.KZ KZTO.KZ ASBN.KZ BAST.KZ KMGD.KZ",
+    "CHINA (Китай)": "BABA BIDU JD PDD LI NIO TCEHY BYDDY XPEV NTES MCHI KWEB FUTU BILI VIPS",
+    "EUROPE (Европа)": "ASML MC.PA VOW3.DE NESN.SW SIE.DE SAP.DE AIR.PA RMS.PA MBG.DE DHL.DE SAN.MC ALV.DE CS.PA BBVA.MC",
+    "CRYPTO": "BTC-USD ETH-USD SOL-USD DOT-USD ADA-USD XRP-USD LINK-USD AVAX-USD DOGE-USD MATIC-USD TRX-USD LTC-USD UNI-USD SHIB-USD BCH-USD"
 }
 
 @st.cache_data(ttl=300)
 def load_data(tickers):
-    # Пытаемся загрузить данные по одному, чтобы не терять весь список
     results = []
     for t in tickers.split():
         try:
             ticker_obj = yf.Ticker(t)
             df = ticker_obj.history(period="1y")
             if df.empty: continue
-            
             p_raw = float(df['Close'].iloc[-1])
             p_usd = p_raw / (rates["₽"] if ".ME" in t else rates["₸"] if (".KZ" in t or "KCZ" in t) else 1)
             results.append({
@@ -92,16 +94,16 @@ def load_data(tickers):
 assets = load_data(MARKETS[market])
 
 if not assets:
-    # Тот самый Динозаврик, если данных нет
     st.markdown("<h1 style='text-align: center; font-size: 100px;'>🦖</h1>", unsafe_allow_html=True)
-    st.error("Упс! Биржа временно недоступна. Попробуйте другой регион или обновите страницу.")
+    st.error("Биржа временно недоступна. Поиграй пока в Дино выше!")
 else:
     df_view = pd.DataFrame(assets)
     df_view["Цена"] = (df_view["p_usd"] * rate_to_use).round(2)
+    st.subheader(f"📊 Список лидеров: {market}")
     st.dataframe(df_view[["ticker", "Цена"]].rename(columns={"Цена": f"Цена ({curr_sym})"}), use_container_width=True)
 
     st.divider()
-    selected = st.selectbox("ВЫБЕРИТЕ АКТИВ:", df_view["ticker"].tolist())
+    selected = st.selectbox("ВЫБЕРИТЕ АКТИВ ДЛЯ АНАЛИЗА:", df_view["ticker"].tolist())
 
     if selected:
         asset = next(item for item in assets if item["ticker"] == selected)
@@ -114,24 +116,23 @@ else:
             val = forecast[-1] + (asset['trend'] * (rate_to_use / 10) * (0.85**i)) + noise
             forecast.append(max(val, 0.01))
 
-        # СИСТЕМА СИГНАЛОВ
+        # СИГНАЛЫ
         change_pct = ((forecast[-1] / p_now) - 1) * 100
-        if change_pct > 5: sig_text, sig_col, sig_hold = "🚀 СИЛЬНАЯ ПОКУПКА", "#00ffcc", "7-14 дней"
-        elif change_pct < -5: sig_text, sig_col, sig_hold = "🆘 СРОЧНО ПРОДАВАТЬ", "#ff4b4b", "Выходить сейчас"
-        else: sig_text, sig_col, sig_hold = "⚖️ НЕЙТРАЛЬНО", "#888888", "Наблюдать"
+        sig_col = "#00ffcc" if change_pct > 5 else "#ff4b4b" if change_pct < -5 else "#888888"
+        sig_text = "ABI СИГНАЛ: ПОКУПКА" if change_pct > 5 else "ABI СИГНАЛ: ПРОДАЖА" if change_pct < -5 else "ABI СИГНАЛ: НЕЙТРАЛЬНО"
 
-        st.markdown(f'<div class="signal-box" style="color: {sig_col}; border-color: {sig_col};">РЕКОМЕНДАЦИЯ: {sig_text}<br><span style="font-size: 16px; color: white;">Рекомендуемый срок: {sig_hold}</span></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="signal-box" style="color: {sig_col}; border-color: {sig_col};">{sig_text}</div>', unsafe_allow_html=True)
 
         c1, c2, c3 = st.columns(3)
         c1.metric("СЕЙЧАС", f"{p_now:,.2f} {curr_sym}")
-        c2.metric("ПРОГНОЗ (14Д)", f"{forecast[-1]:,.2f} {curr_sym}", f"{change_pct:+.2f}%")
+        c2.metric("ЦЕЛЬ (14Д)", f"{forecast[-1]:,.2f} {curr_sym}", f"{change_pct:+.2f}%")
         profit = (forecast[-1] * (budget_base/p_now * rate_to_use)) - (budget_base * rate_to_use)
         c3.metric("ПРОФИТ", f"{profit:,.2f} {curr_sym}")
 
         fig, ax = plt.subplots(figsize=(12, 4), facecolor='none')
         ax.set_facecolor('none')
         h_disp = [h * rate_to_use for h in asset['history_usd']]
-        ax.plot(h_disp, color='#444444', alpha=0.6, label="История")
-        ax.plot(range(len(h_disp)-1, len(h_disp)+15), forecast, marker='o', color=sig_col, linewidth=3, label="ABI Forecast")
+        ax.plot(h_disp, color='#444444', alpha=0.6)
+        ax.plot(range(len(h_disp)-1, len(h_disp)+15), forecast, marker='o', color=sig_col, linewidth=3)
         ax.tick_params(colors='white')
         st.pyplot(fig)
