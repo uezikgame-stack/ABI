@@ -4,8 +4,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+# Убираем лишние отступы и скрываем мусор
 st.set_page_config(page_title="ABI Terminal", layout="wide")
-st.title("🛡️ ABI: Professional Intelligence Terminal")
+st.markdown("<style>#MainMenu {visibility: hidden;} footer {visibility: hidden;}</style>", unsafe_allow_html=True)
+
+st.title("🛡️ ABI: Analytics & Intelligence")
 
 # Панель управления
 st.sidebar.header("ABI Control Panel")
@@ -20,85 +23,67 @@ MARKETS = {
     "GOODS": "GC=F SI=F PL=F HG=F PA=F CL=F NG=F BZ=F ZW=F ZC=F"
 }
 
-@st.cache_data(ttl=600) # Обновляем чаще для точности
+@st.cache_data(ttl=300)
 def load_abi_data(tickers):
     data = yf.download(tickers, period="6mo", interval="1d", group_by='ticker', progress=False)
     results = []
     for t in tickers.split():
         try:
-            df = data[t] if len(tickers.split()) > 1 else data
-            df = df.dropna()
+            df = data[t].dropna()
             if df.empty: continue
             p = float(df['Close'].iloc[-1])
             y = df['Close'].values
             x = np.arange(len(y))
             slope, _ = np.polyfit(x, y, 1)
-            v = float(df['Close'].pct_change().std())
-            sc = (p / df['Close'].iloc[0] - 1) * 100
-            results.append({"Тикер": t, "Цена": round(p, 2), "Вол": v, "Тренд_Коэф": slope, "Смена %": round(sc, 2)})
+            results.append({"Тикер": t, "Цена": round(p, 2), "Тренд": slope, "Вол": float(df['Close'].pct_change().std())})
         except: continue
     return results
 
 assets = load_abi_data(MARKETS[market_choice])
-df_assets = pd.DataFrame(assets).sort_values(by="Смена %", ascending=False).reset_index(drop=True)
+df_assets = pd.DataFrame(assets).sort_values(by="Цена", ascending=False).reset_index(drop=True)
 df_assets.index += 1 
 
-st.subheader(f"📊 Аналитика рынка: {market_choice}")
-st.dataframe(df_assets[["Тикер", "Цена", "Смена %"]].head(15), use_container_width=True)
+st.subheader(f"📊 Текущие котировки: {market_choice}")
+st.dataframe(df_assets[["Тикер", "Цена"]], use_container_width=True)
 
 st.divider()
 selected_ticker = st.selectbox("Выберите актив:", df_assets["Тикер"].tolist())
 
 if selected_ticker:
-    asset_info = yf.Ticker(selected_ticker)
     asset = next(item for item in assets if item["Тикер"] == selected_ticker)
+    asset_info = yf.Ticker(selected_ticker)
     
-    # НОВЫЙ БЛОК: НЫНЕШНЯЯ ЦЕНА
-    st.write(f"### 🎯 Текущий статус {selected_ticker}")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Текущая цена", f"${asset['Цена']}")
-    c2.metric("Волатильность (Риск)", f"{asset['Вол']*100:.2f}%")
-    c3.metric("Тренд (6 мес)", f"{asset['Смена %']}%")
-
-    # Сверхточный прогноз ABI
+    # Прогноз
     prices = [asset['Цена']]
-    for d in range(1, 8):
-        drift = asset['Тренд_Коэф'] * 0.2
-        shock = np.random.normal(0, asset['Цена'] * asset['Вол'] * 0.4)
-        prices.append(max(prices[-1] + drift + shock, 0.01))
+    for _ in range(7):
+        prices.append(prices[-1] + asset['Тренд'] * 0.2 + np.random.normal(0, asset['Цена'] * asset['Вол'] * 0.4))
     
-    col1, col2 = st.columns([2, 1])
-    with col1:
+    st.write(f"### 🎯 Анализ {selected_ticker}")
+    c1, c2 = st.columns([2, 1])
+    
+    with c1:
         fig, ax = plt.subplots(figsize=(10, 4))
-        ax.plot(prices, marker='o', color='#28a745', linewidth=2, label="Прогноз ABI")
-        ax.axhline(asset['Цена'], color='red', linestyle='--', alpha=0.6, label="Вход (Текущая)")
-        ax.grid(True, alpha=0.2)
+        ax.plot(prices, marker='o', color='#28a745', label="Прогноз ABI")
+        ax.axhline(asset['Цена'], color='red', linestyle='--', label="Сейчас")
         ax.legend()
         st.pyplot(fig)
         
-    with col2:
-        st.write("### Резюме ABI")
-        profit_val = (prices[-1] * (budget/asset['Цена'])) - budget
-        st.metric("Прогноз через 7 дней", f"${prices[-1]:.2f}", f"{((prices[-1]/prices[0])-1)*100:.2f}%")
-        st.write(f"**Ваш доход при вложении ${budget}:**")
-        st.success(f"**+ ${profit_val:.2f}**") if profit_val > 0 else st.error(f"**- ${abs(profit_val):.2f}**")
+    with c2:
+        profit = (prices[-1] * (budget/asset['Цена'])) - budget
+        st.metric("Цена через неделю", f"${prices[-1]:.2f}")
+        st.metric("Чистый доход", f"${profit:.2f}", f"{((prices[-1]/asset['Цена'])-1)*100:.2f}%")
+        if profit > 0: st.success("🎯 РЕКОМЕНДАЦИЯ: ПОКУПАТЬ")
+        else: st.error("⚠️ РЕКОМЕНДАЦИЯ: ПРОДАВАТЬ")
 
-    # ИСПРАВЛЕННЫЙ БЛОК НОВОСТЕЙ (v4)
-    st.divider()
-    st.subheader(f"📰 Почему {selected_ticker} двигается?")
-    try:
-        raw_news = asset_info.news
-        if raw_news:
-            for n in raw_news[:5]:
-                # Более гибкий поиск заголовка
-                title = n.get('title') or n.get('content', {}).get('title') or "Новость без названия"
-                link = n.get('link') or n.get('content', {}).get('canonicalUrl', {}).get('url', '#')
-                publisher = n.get('publisher') or "Yahoo Finance"
-                
-                with st.expander(f"📌 {title}"):
-                    st.write(f"**Источник:** {publisher}")
-                    st.write(f"**Ссылка:** [Открыть новость]({link})")
-        else:
-            st.info("По данному активу новостей на Yahoo Finance не найдено.")
-    except Exception as e:
-        st.error(f"Ошибка загрузки новостей. Тикер может быть недоступен для новостной ленты.")
+    # СКРЫТЫЙ БЛОК: НОВОСТИ (только если нажать)
+    with st.expander("🔍 Показать обоснование (Новости)"):
+        try:
+            news = asset_info.news
+            if news:
+                for n in news[:3]:
+                    st.write(f"**{n.get('title', 'Новость')}**")
+                    st.write(f"[Читать]({n.get('link', '#')})")
+            else:
+                st.write("Новостей нет.")
+        except:
+            st.write("Связь с новостями временно прервана.")
