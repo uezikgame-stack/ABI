@@ -5,139 +5,123 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import streamlit.components.v1 as components
 
-# --- LUXURY DESIGN ---
+# --- LUXURY TURBO DESIGN ---
 st.set_page_config(page_title="ABI Terminal", layout="wide")
 st.markdown("""
     <style>
     .stApp {
-        background: linear-gradient(rgba(0,0,0,0.85), rgba(0,0,0,0.85)), 
-                    url('https://images.unsplash.com/photo-1639762681485-074b7f938ba0?q=80&w=2232');
+        background: linear-gradient(rgba(0,0,0,0.9), rgba(0,0,0,0.9)), 
+                    url('https://images.unsplash.com/photo-1611974717482-98252c00bc20?q=80&w=2070');
         background-size: cover; background-attachment: fixed;
     }
-    div[data-testid="metric-container"] {
-        background: rgba(10, 10, 15, 0.9); border: 1px solid #00ffcc;
-        padding: 20px; border-radius: 15px; backdrop-filter: blur(10px);
+    .main-nav {
+        display: flex; gap: 20px; background: rgba(0, 255, 204, 0.05);
+        padding: 15px; border-radius: 15px; border: 1px solid #00ffcc33; margin-bottom: 20px;
     }
-    .signal-box {
-        padding: 20px; border-radius: 15px; text-align: center;
-        font-weight: bold; font-size: 24px; margin: 10px 0;
-        border: 2px solid #00ffcc; background: rgba(0, 255, 204, 0.1);
+    .metric-card {
+        background: rgba(10, 15, 25, 0.95); border-left: 5px solid #00ffcc;
+        padding: 20px; border-radius: 10px; box-shadow: 0 0 20px rgba(0,255,204,0.1);
     }
-    .nav-menu {
-        display: flex; justify-content: space-around;
-        background: rgba(0, 255, 204, 0.1); padding: 10px;
-        border-radius: 10px; border: 1px solid rgba(0, 255, 204, 0.3);
-        margin-bottom: 25px;
-    }
-    h1, h3 { color: #00ffcc !important; text-shadow: 0 0 10px #00ffcc; }
+    h1, h2, h3 { color: #00ffcc !important; font-family: 'Courier New', monospace; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- МЕНЮ И НАСТОЯЩАЯ ИГРА ---
-st.markdown('<div class="nav-menu"><span style="color: #00ffcc;">🏠 ТЕРМИНАЛ</span><span style="color: #888;">📈 АНАЛИТИКА</span><span style="color: #888;">🎓 ОБУЧЕНИЕ</span></div>', unsafe_allow_html=True)
+# --- ОТДЕЛЬНЫЙ ИНТЕРФЕЙС МЕНЮ ---
+tab1, tab2 = st.tabs(["🚀 ТЕРМИНАЛ", "🦖 ИГРОВАЯ КОНСОЛЬ"])
 
-with st.expander("🦖 ИГРАТЬ В ДИНОЗАВРИКА (ЖМИ SPACE ДЛЯ ПРЫЖКА)"):
-    # Встраиваем полноценную HTML5 игру
-    components.iframe("https://wayou.github.io/t-rex-runner/", height=300)
+with tab2:
+    st.markdown("### 🎮 ABI GAMING ZONE")
+    components.iframe("https://wayou.github.io/t-rex-runner/", height=400)
 
-st.title("🛡️ ABI: GLOBAL QUANTUM TERMINAL")
+with tab1:
+    st.title("🛡️ ABI: QUANTUM TURBO TERMINAL")
 
-# --- SIDEBAR & RATES ---
-st.sidebar.header("🏦 Настройки")
-budget_base = st.sidebar.number_input("Ваш капитал ($)", value=1000, step=100)
-currency = st.sidebar.radio("Валюта:", ["USD ($)", "RUB (₽)", "KZT (₸)"])
+    # --- SIDEBAR: FAST CONFIG ---
+    st.sidebar.header("🏦 Capital Settings")
+    budget = st.sidebar.number_input("Капитал", value=1000)
+    currency = st.sidebar.radio("Валюта:", ["USD ($)", "RUB (₽)", "KZT (₸)"])
+    
+    market = st.sidebar.selectbox("Регион (Топ-15):", ["USA", "RF (Россия)", "KAZ (Казахстан)", "CHINA", "EUROPE", "CRYPTO"])
 
-@st.cache_data(ttl=3600)
-def get_rates():
-    try:
-        r = yf.download(["RUB=X", "KZT=X"], period="1d", progress=False)['Close'].iloc[-1]
-        return {"₽": float(r["RUB=X"]), "₸": float(r["KZT=X"]), "$": 1.0}
-    except: return {"₽": 91.5, "₸": 485.0, "$": 1.0}
+    # --- ТУРБО-ЗАГРУЗКА ДАННЫХ ---
+    MARKETS = {
+        "USA": "AAPL NVDA TSLA MSFT AMZN AMD NFLX GOOGL META INTC ADBE CRM AVGO QCOM PYPL",
+        "RF (Россия)": "SBER.ME GAZP.ME LKOH.ME YNDX ROSN.ME MGNT.ME NVTK.ME GMKN.ME TATN.ME CHMF.ME ALRS.ME MTSS.ME PLZL.ME MOEX.ME SNGS.ME",
+        "KAZ (Казахстан)": "KCZ.L KMGZ.KZ HSBK.KZ KCELL.KZ NAC.KZ CCBN.KZ KZAP.KZ KEGC.KZ KZTK.KZ KZTO.KZ ASBN.KZ BAST.KZ",
+        "CHINA": "BABA BIDU JD PDD LI NIO TCEHY BYDDY XPEV NTES MCHI KWEB FUTU BILI VIPS",
+        "EUROPE": "ASML MC.PA VOW3.DE NESN.SW SIE.DE SAP.DE AIR.PA RMS.PA MBG.DE DHL.DE SAN.MC ALV.DE CS.PA BBVA.MC",
+        "CRYPTO": "BTC-USD ETH-USD SOL-USD DOT-USD ADA-USD XRP-USD LINK-USD AVAX-USD DOGE-USD MATIC-USD TRX-USD LTC-USD"
+    }
 
-rates = get_rates()
-curr_sym = currency.split("(")[1][0]
-rate_to_use = rates[curr_sym]
-
-# --- ТОП-15 МАРКЕТЫ ---
-st.sidebar.header("🌍 Рынки (Топ-15)")
-market = st.sidebar.selectbox("Регион:", ["USA", "RF (Россия)", "KAZ (Казахстан)", "CHINA (Китай)", "EUROPE (Европа)", "CRYPTO"])
-
-MARKETS = {
-    "USA": "AAPL NVDA TSLA MSFT AMZN AMD NFLX GOOGL META INTC ADBE CRM AVGO QCOM PYPL",
-    "RF (Россия)": "SBER.ME GAZP.ME LKOH.ME YNDX ROSN.ME MGNT.ME NVTK.ME GMKN.ME TATN.ME CHMF.ME ALRS.ME MTSS.ME PLZL.ME MOEX.ME SNGS.ME",
-    "KAZ (Казахстан)": "KCZ.L KMGZ.KZ HSBK.KZ KCELL.KZ NAC.KZ CCBN.KZ KZAP.KZ KEGC.KZ KZTK.KZ KZTO.KZ ASBN.KZ BAST.KZ",
-    "CHINA (Китай)": "BABA BIDU JD PDD LI NIO TCEHY BYDDY XPEV NTES MCHI KWEB FUTU BILI VIPS",
-    "EUROPE (Европа)": "ASML MC.PA VOW3.DE NESN.SW SIE.DE SAP.DE AIR.PA RMS.PA MBG.DE DHL.DE SAN.MC ALV.DE CS.PA BBVA.MC",
-    "CRYPTO": "BTC-USD ETH-USD SOL-USD DOT-USD ADA-USD XRP-USD LINK-USD AVAX-USD DOGE-USD MATIC-USD TRX-USD LTC-USD UNI-USD"
-}
-
-@st.cache_data(ttl=300)
-def load_data(tickers):
-    results = []
-    for t in tickers.split():
-        try:
-            df = yf.Ticker(t).history(period="1y")
-            if df.empty: continue
-            p_raw = float(df['Close'].iloc[-1])
-            # Конвертация в базовый USD
-            is_rub = ".ME" in t
-            is_kzt = ".KZ" in t or "KCZ" in t
-            p_usd = p_raw / (rates["₽"] if is_rub else rates["₸"] if is_kzt else 1)
-            results.append({
-                "ticker": t, "p_usd": p_usd, 
-                "vol": float(df['Close'].pct_change().std()),
-                "trend": (df['Close'].iloc[-1] - df['Close'].iloc[-15])/15,
-                "history_usd": (df['Close'].values / (rates["₽"] if is_rub else rates["₸"] if is_kzt else 1))[-30:]
-            })
-        except: continue
-    return results
-
-assets = load_data(MARKETS[market])
-
-if assets:
-    df_view = pd.DataFrame(assets)
-    df_view["Цена"] = (df_view["p_usd"] * rate_to_use).round(2)
-    st.dataframe(df_view[["ticker", "Цена"]].rename(columns={"Цена": f"Цена ({curr_sym})"}), use_container_width=True)
-
-    st.divider()
-    selected = st.selectbox("ВЫБЕРИТЕ АКТИВ:", df_view["ticker"].tolist())
-
-    if selected:
-        asset = next(item for item in assets if item["ticker"] == selected)
-        p_now = asset['p_usd'] * rate_to_use
+    @st.cache_data(ttl=300)
+    def fast_load(market_name):
+        tickers = MARKETS[market_name]
+        # Загружаем всё одним махом для скорости
+        data = yf.download(tickers, period="1y", group_by='ticker', progress=False)
         
-        # СТАБИЛЬНЫЙ ПРОГНОЗ
+        # Курсы валют
+        rates_data = yf.download(["RUB=X", "KZT=X"], period="1d", progress=False)['Close']
+        r = {"₽": float(rates_data["RUB=X"].iloc[-1]), "₸": float(rates_data["KZT=X"].iloc[-1]), "$": 1.0}
+        
+        results = []
+        for t in tickers.split():
+            try:
+                df = data[t].dropna()
+                if df.empty: continue
+                
+                curr_price = float(df['Close'].iloc[-1])
+                # Фикс конвертации
+                conv = r["₽"] if ".ME" in t else r["₸"] if (".KZ" in t or "KCZ" in t) else 1.0
+                p_usd = curr_price / conv
+                
+                results.append({
+                    "ticker": t, "p_usd": p_usd,
+                    "history": (df['Close'].values / conv)[-30:],
+                    "vol": float(df['Close'].pct_change().std()),
+                    "trend": (df['Close'].iloc[-1] - df['Close'].iloc[-15]) / conv / 15
+                })
+            except: continue
+        return results, r
+
+    with st.spinner('Подключаюсь к квантовым серверам...'):
+        assets, rates = fast_load(market)
+        curr_sym = currency.split("(")[1][0]
+        rate_to_use = rates[curr_sym]
+
+    if assets:
+        df_view = pd.DataFrame(assets)
+        df_view["Цена"] = (df_view["p_usd"] * rate_to_use).round(2)
+        
+        st.dataframe(df_view[["ticker", "Цена"]].set_index("ticker").T, use_container_width=True)
+
+        selected = st.selectbox("ВЫБЕРИТЕ АКТИВ:", [a['ticker'] for a in assets])
+        asset = next(a for a in assets if a['ticker'] == selected)
+        
+        # --- ПРОГНОЗ 14 ДНЕЙ (БЕЗ ОШИБОК) ---
+        p_now = asset['p_usd'] * rate_to_use
         np.random.seed(42)
         forecast = [p_now]
         for i in range(1, 15):
-            noise = np.random.normal(0, p_now * asset['vol'] * 0.4)
-            val = forecast[-1] + (asset['trend'] * (rate_to_use / 10) * (0.85**i)) + noise
-            forecast.append(max(val, 0.01))
+            change = (asset['trend'] * rate_to_use) + np.random.normal(0, p_now * asset['vol'] * 0.5)
+            forecast.append(max(forecast[-1] + change, 0.01))
 
-        # СИГНАЛЫ
-        change_pct = ((forecast[-1] / p_now) - 1) * 100
-        sig_col = "#00ffcc" if change_pct > 5 else "#ff4b4b" if change_pct < -5 else "#888888"
-        st.markdown(f'<div class="signal-box" style="color: {sig_col}; border-color: {sig_col};">ABI SIGNAL: {"ПОКУПКА" if change_pct > 5 else "ПРОДАЖА" if change_pct < -5 else "НЕЙТРАЛЬНО"}</div>', unsafe_allow_html=True)
-
+        # ИНТЕРФЕЙС МЕТРИК
+        chg = ((forecast[-1]/p_now)-1)*100
         c1, c2, c3 = st.columns(3)
-        c1.metric("СЕЙЧАС", f"{p_now:,.2f} {curr_sym}")
-        c2.metric("ПРОГНОЗ (14Д)", f"{forecast[-1]:,.2f} {curr_sym}", f"{change_pct:+.2f}%")
-        profit = (forecast[-1] * (budget_base/p_now * rate_to_use)) - (budget_base * rate_to_use)
-        c3.metric("ПРОФИТ", f"{profit:,.2f} {curr_sym}")
+        with c1: st.markdown(f"<div class='metric-card'>💸 ЦЕНА<br><h2>{p_now:,.2f} {curr_sym}</h2></div>", unsafe_allow_html=True)
+        with c2: st.markdown(f"<div class='metric-card'>🎯 ЦЕЛЬ<br><h2>{forecast[-1]:,.2f} {curr_sym}</h2><small>{chg:+.2f}%</small></div>", unsafe_allow_html=True)
+        with c3: 
+            prof = (forecast[-1] * (budget/p_now * rate_to_use)) - (budget * rate_to_use)
+            st.markdown(f"<div class='metric-card'>💰 ПРОФИТ<br><h2>{prof:,.2f} {curr_sym}</h2></div>", unsafe_allow_html=True)
 
-        # ИСПРАВЛЕННЫЙ ГРАФИК
-        fig, ax = plt.subplots(figsize=(12, 5), facecolor='none')
+        # --- СТАБИЛЬНЫЙ ГРАФИК ---
+        fig, ax = plt.subplots(figsize=(12, 4), facecolor='none')
         ax.set_facecolor('none')
-        h_disp = [h * rate_to_use for h in asset['history_usd']]
+        h_vals = [x * rate_to_use for x in asset['history']]
         
-        # Отрисовка истории и прогноза с точной стыковкой
-        x_hist = np.arange(len(h_disp))
-        x_fore = np.arange(len(h_disp) - 1, len(h_disp) + 14)
-        
-        ax.plot(x_hist, h_disp, color='#444444', alpha=0.7, linewidth=2, label="История")
-        ax.plot(x_fore, forecast, marker='o', color=sig_col, linewidth=3, markersize=6, label="Прогноз ABI")
+        # Х-оси без нахлеста
+        ax.plot(range(len(h_vals)), h_vals, color='gray', alpha=0.5, label="История")
+        ax.plot(range(len(h_vals)-1, len(h_vals)+14), forecast, color='#00ffcc', linewidth=3, marker='o', label="ABI PRO")
         
         ax.tick_params(colors='white')
-        ax.grid(color='#222222', linestyle='--', alpha=0.5)
-        ax.legend(facecolor='#000000', labelcolor='white')
         st.pyplot(fig)
