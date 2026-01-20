@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# --- СТИЛИ И ФОН (ОСТАВЛЯЕМ КАК БЫЛО) ---
+# --- КОНФИГ И СТИЛИ ---
 st.set_page_config(page_title="ABI Quantum", layout="wide")
 
 st.markdown("""
@@ -15,110 +15,112 @@ st.markdown("""
         background-size: cover;
     }
     .metric-card {
-        background: rgba(15, 20, 30, 0.9); border: 1px solid #00ffcc33;
-        padding: 20px; border-radius: 15px;
+        background: rgba(15, 20, 30, 0.95); border: 1px solid #00ffcc33;
+        padding: 25px; border-radius: 15px; border-left: 5px solid #00ffcc;
     }
-    /* Тот самый белый бокс с Дино как в Google */
     .google-dino-box {
-        background: #f7f7f7; border-radius: 10px; padding: 50px; 
-        text-align: center; border: 2px solid #ddd; color: #535353;
-        font-family: "Segoe UI", Tahoma, sans-serif;
+        background: #f7f7f7; border-radius: 15px; padding: 60px; 
+        text-align: center; border: 3px solid #ddd; color: #535353;
+        margin: 20px auto; max-width: 900px;
     }
     h1, h2, h3 { color: #00ffcc !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- РЫНКИ ---
+# --- ПОЛНАЯ БАЗА ТИКЕРОВ ---
 MARKETS = {
-    "USA": "AAPL NVDA TSLA MSFT AMZN AMD NFLX GOOGL META INTC",
-    "EUROPE": "ASML MC.PA VOW3.DE NESN.SW SIE.DE SAP.DE AIR.PA",
-    "KAZ (Казахстан)": "KCZ.L KMGZ.KZ HSBK.KZ KCELL.KZ NAC.KZ CCBN.KZ",
-    "RF (Россия)": "SBER.ME GAZP.ME LKOH.ME YNDX ROSN.ME MGNT.ME",
-    "CRYPTO": "BTC-USD ETH-USD SOL-USD DOT-USD ADA-USD"
+    "USA": "AAPL NVDA TSLA MSFT AMZN AMD NFLX GOOGL META INTC ADBE CRM AVGO QCOM PYPL TSMC ASML COST PEP NKE TM ORCL MCD DIS",
+    "RF (Россия)": "SBER.ME GAZP.ME LKOH.ME YNDX ROSN.ME MGNT.ME NVTK.ME GMKN.ME TATN.ME CHMF.ME ALRS.ME MTSS.ME PLZL.ME MOEX.ME",
+    "KAZ (Казахстан)": "KCZ.L KMGZ.KZ HSBK.KZ KCELL.KZ NAC.KZ CCBN.KZ KZAP.KZ KEGC.KZ KZTK.KZ KZTO.KZ ASBN.KZ BAST.KZ",
+    "CHINA": "BABA BIDU JD PDD LI NIO TCEHY BYDDY XPEV NTES MCHI KWEB FUTU BILI VIPS KC TME IQ EH ZLAB",
+    "EUROPE": "ASML MC.PA VOW3.DE NESN.SW SIE.DE SAP.DE AIR.PA RMS.PA MBG.DE DHL.DE SAN.MC ALV.DE CS.PA BBVA.MC",
+    "CRYPTO": "BTC-USD ETH-USD SOL-USD DOT-USD ADA-USD XRP-USD LINK-USD AVAX-USD DOGE-USD MATIC-USD"
 }
 
 @st.cache_data(ttl=300)
-def get_data(m_name):
+def fetch_quantum_data(m_name):
     try:
         tickers = MARKETS[m_name]
         data = yf.download(tickers, period="1y", group_by='ticker', progress=False)
         rates = yf.download(["RUB=X", "KZT=X"], period="1d", progress=False)['Close']
         r_map = {"₽": float(rates["RUB=X"].iloc[-1]), "₸": float(rates["KZT=X"].iloc[-1]), "$": 1.0}
         
-        res = []
+        final_list = []
         for t in tickers.split():
             try:
                 df = data[t].dropna() if len(tickers.split()) > 1 else data.dropna()
                 if df.empty: continue
                 conv = r_map["₽"] if ".ME" in t else r_map["₸"] if (".KZ" in t or "KCZ" in t) else 1.0
-                res.append({
+                final_list.append({
                     "Asset": t, "p_usd": float(df['Close'].iloc[-1]) / conv,
                     "hist": (df['Close'].values / conv)[-30:],
                     "vol": float(df['Close'].pct_change().std()),
                     "trend": (df['Close'].iloc[-1] - df['Close'].iloc[-15]) / conv / 15
                 })
             except: continue
-        return res, r_map
+        return final_list, r_map
     except: return [], {}
 
-# --- SIDEBAR ---
+# --- ИНТЕРФЕЙС УПРАВЛЕНИЯ ---
 st.sidebar.title("🛡️ ABI CONTROL")
-m_sel = st.sidebar.selectbox("РЕГИОН:", list(MARKETS.keys()))
-c_sel = st.sidebar.radio("ВАЛЮТА:", ["USD ($)", "RUB (₽)", "KZT (₸)"])
-cap = st.sidebar.number_input("КАПИТАЛ:", value=1000)
+m_choice = st.sidebar.selectbox("ВЫБОР РЫНКА:", list(MARKETS.keys()))
+c_choice = st.sidebar.radio("ВАЛЮТА ТЕРМИНАЛА:", ["USD ($)", "RUB (₽)", "KZT (₸)"])
+cap_input = st.sidebar.number_input("ВАШ КАПИТАЛ:", value=1000)
 
-assets, rates = get_data(m_sel)
+assets, rates = fetch_quantum_data(m_choice)
 
-# --- ГЛАВНЫЙ ЭКРАН ---
+# --- ГЛАВНЫЙ МОДУЛЬ ---
 if not assets:
-    # ДИНОЗАВР КАК У GOOGLE ЕСЛИ ПУСТО
-    st.markdown("""
+    # ОРИГИНАЛЬНЫЙ ДИНОЗАВР ДЛЯ КЗ, РФ И ОСТАЛЬНЫХ
+    st.markdown(f"""
         <div class="google-dino-box">
-            <img src="https://i.giphy.com/media/v1.Y2lkPTc5MGI3NjExYnZ6Zmt4bm1oZ3R0Z3R0Z3R0Z3R0Z3R0Z3R0Z3R0Z3R0Z3R0ZCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/10X22vczHTQMfK/giphy.gif" width="200">
-            <h2 style="color: #535353 !important; font-family: sans-serif;">Нет подключения к интернету (или данным)</h2>
-            <p style="font-size: 16px;">Попробуйте выбрать другой регион. Динозаврик ждет...</p>
-            <p style="color: #999; font-size: 14px; margin-top: 10px;">ERR_INTERNET_DISCONNECTED</p>
+            <img src="https://i.giphy.com/media/v1.Y2lkPTc5MGI3NjExYnZ6Zmt4bm1oZ3R0Z3R0Z3R0Z3R0Z3R0Z3R0Z3R0Z3R0Z3R0ZCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/10X22vczHTQMfK/giphy.gif" width="250">
+            <h2 style="color: #535353 !important; margin-top: 20px;">НЕТ ДАННЫХ ПО РЕГИОНУ: {m_choice}</h2>
+            <p style="font-size: 18px; color: #666;">Попробуйте сменить провайдера или выбрать другой актив. Динозаврик ждет сигнала...</p>
+            <p style="color: #bbb; font-size: 14px; margin-top: 20px;">STATUS_CODE: EMPTY_DATA_RESPONSE</p>
         </div>
     """, unsafe_allow_html=True)
 else:
-    c_sign = c_sel.split("(")[1][0]
-    r_val = rates[c_sign]
+    c_sign = c_choice.split("(")[1][0]
+    curr_rate = rates[c_sign]
     
-    st.title(f"🚀 TERMINAL: {m_sel}")
+    st.title(f"🚀 GLOBAL TERMINAL: {m_choice}")
     
-    # ТАБЛИЦА
-    df_v = pd.DataFrame(assets).head(25)
-    df_v["Цена"] = (df_v["p_usd"] * r_val).round(2)
-    df_v.index = np.arange(1, len(df_v) + 1)
-    st.dataframe(df_v[["Asset", "Цена"]], height=300, use_container_width=True)
+    # 1. ТОП-25 СИСТЕМЫ
+    df_assets = pd.DataFrame(assets).head(25)
+    df_assets["Цена"] = (df_assets["p_usd"] * curr_rate).round(2)
+    df_assets.index = np.arange(1, len(df_assets) + 1)
+    st.dataframe(df_assets[["Asset", "Цена"]], height=350, use_container_width=True)
 
-    # ВЫБОР И ПРОГНОЗ
-    target = st.selectbox("ВЫБОР:", df_v["Asset"].tolist())
-    item = next(a for a in assets if a['Asset'] == target)
-    p_now = item['p_usd'] * r_val
+    # 2. ДЕТАЛЬНЫЙ АНАЛИЗ
+    sel_ticker = st.selectbox("ВЫБЕРИТЕ АКТИВ ДЛЯ ПРОГНОЗА:", df_assets["Asset"].tolist())
+    target_data = next(a for a in assets if a['Asset'] == sel_ticker)
+    price_now = target_data['p_usd'] * curr_rate
     
     np.random.seed(42)
-    forecast = [p_now]
+    forecast_line = [price_now]
     for _ in range(1, 15):
-        noise = np.random.normal(0, p_now * item['vol'] * 0.5)
-        forecast.append(max(forecast[-1] + (item['trend'] * r_val) + noise, 0.01))
+        noise = np.random.normal(0, price_now * target_data['vol'] * 0.5)
+        forecast_line.append(max(forecast_line[-1] + (target_data['trend'] * curr_rate) + noise, 0.01))
 
-    # ЛОГИКА ЦВЕТА ПРОФИТА (КРАСНЫЙ ДЛЯ МИНУСА)
-    prof = (forecast[-1] * (cap/p_now * r_val)) - (cap * r_val)
-    p_clr = "#ff4b4b" if prof < 0 else "#00ffcc" #
+    # --- ЛОГИКА ЦВЕТА (ПРОФИТ КРАСНЫЙ ПРИ МИНУСЕ) ---
+    total_profit = (forecast_line[-1] * (cap_input/price_now * curr_rate)) - (cap_input * curr_rate)
     
-    diff = ((forecast[-1]/p_now)-1)*100
-    s_clr = "#00ffcc" if diff > 2 else "#ff4b4b" if diff < -2 else "#888888"
+    # Жесткий фикс цвета профита
+    p_color = "#ff4b4b" if total_profit < 0 else "#00ffcc" 
+    
+    diff_pct = ((forecast_line[-1]/price_now)-1)*100
+    sig_color = "#00ffcc" if diff_pct > 2 else "#ff4b4b" if diff_pct < -2 else "#888888"
 
-    c1, c2, c3 = st.columns(3)
-    c1.markdown(f"<div class='metric-card'>СЕЙЧАС<br><h2>{p_now:,.2f} {c_sign}</h2></div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='metric-card'>ПРОГНОЗ<br><h2 style='color:{s_clr} !important;'>{forecast[-1]:,.2f} {c_sign}</h2></div>", unsafe_allow_html=True)
-    c3.markdown(f"<div class='metric-card'>ПРОФИТ<br><h2 style='color:{p_clr} !important;'>{prof:,.2f} {c_sign}</h2></div>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns(3)
+    col1.markdown(f"<div class='metric-card'>ТЕКУЩАЯ ЦЕНА<br><h2>{price_now:,.2f} {c_sign}</h2></div>", unsafe_allow_html=True)
+    col2.markdown(f"<div class='metric-card'>ЦЕЛЬ (14 ДНЕЙ)<br><h2 style='color:{sig_color} !important;'>{forecast_line[-1]:,.2f} {c_sign}</h2></div>", unsafe_allow_html=True)
+    col3.markdown(f"<div class='metric-card'>ВАШ ПРОФИТ<br><h2 style='color:{p_color} !important;'>{total_profit:,.2f} {c_sign}</h2></div>", unsafe_allow_html=True)
 
     # ГРАФИК
     fig, ax = plt.subplots(figsize=(12, 4), facecolor='none')
     ax.set_facecolor('none')
-    ax.plot(range(30), [x * r_val for x in item['hist']], color='white', alpha=0.3)
-    ax.plot(range(29, 44), forecast, color=s_clr, linewidth=4, marker='o')
+    ax.plot(range(30), [x * curr_rate for x in target_data['hist']], color='white', alpha=0.2)
+    ax.plot(range(29, 44), forecast_line, color=sig_color, linewidth=4, marker='o')
     ax.tick_params(colors='white')
     st.pyplot(fig)
