@@ -4,14 +4,14 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-# --- 1. ТЕРМИНАЛЬНЫЙ СТИЛЬ ---
+# --- 1. ИНТЕРФЕЙС ---
 st.set_page_config(page_title="ABI ANALITIC", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #020508; color: #00ffcc; }
     .metric-card { background: rgba(0, 0, 0, 0.9); border: 1px solid #00ffcc; padding: 15px; text-align: center; height: 110px; }
     .error-card { background: rgba(255, 75, 75, 0.25); border: 1px solid #ff4b4b; padding: 15px; text-align: center; height: 110px; }
-    h1, h2, h3, span, label { color: #00ffcc !important; }
+    h1, h2, h3, span, label, p { color: #00ffcc !important; }
     .stDataFrame { border: 1px solid #00ffcc !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -30,7 +30,7 @@ UI = {
     }
 }
 
-# --- 3. ЖЕСТКАЯ БАЗА 15 ---
+# --- 3. БАЗА АКТИВОВ ---
 DB = {
     "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ", "ASBN.KZ", "BAST.KZ", "KMCP.KZ", "KASE.KZ", "KZIP.KZ", "KZMZ.KZ"],
     "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA", "MBG.DE", "DHL.DE", "SAN.MC", "ALV.DE", "CS.PA", "BBVA.MC", "OR.PA"],
@@ -41,11 +41,11 @@ DB = {
 }
 
 @st.cache_data(ttl=600)
-def get_raw_data(m_name):
+def get_global_data(m_name):
     tickers = DB[m_name]
     data = yf.download(tickers, period="1mo", interval="1d", group_by='ticker', progress=False)
-    # Берем актуальные курсы для конвертации профита
     rates_df = yf.download(["RUB=X", "KZT=X", "EURUSD=X"], period="1d", progress=False)['Close']
+    
     r_map = {
         "₽": float(rates_df["RUB=X"].iloc[-1]), 
         "$": 1.0, 
@@ -53,92 +53,98 @@ def get_raw_data(m_name):
         "EUR": float(rates_df["EURUSD=X"].iloc[-1])
     }
     
-    res = []
+    clean_assets = []
     for t in tickers:
         try:
             df = data[t].dropna()
             if df.empty: continue
-            last_p = float(df['Close'].iloc[-1])
-            # Определяем внутреннюю валюту актива
-            if ".ME" in t: base_curr = "₽"
-            elif ".KZ" in t or "KCZ" in t: base_curr = "₸"
-            elif ".PA" in t or ".DE" in t or ".MC" in t: base_curr = "EUR"
-            else: base_curr = "$"
             
-            # Приводим всё к USD для хранения
-            p_usd = last_p / r_map[base_curr] if base_curr != "EUR" else last_p * r_map["EUR"]
-            ch = (df['Close'].iloc[-1] / df['Close'].iloc[0]) - 1
-            res.append({"T": t, "P_USD": p_usd, "CH": ch, "AVG": df['Close'].pct_change().mean(), "STD": df['Close'].pct_change().std(), "DF": df})
+            # Определяем исходную валюту акции
+            if ".ME" in t: base = "₽"
+            elif ".KZ" in t or "KCZ" in t: base = "₸"
+            elif ".PA" in t or ".DE" in t or ".MC" in t: base = "EUR"
+            else: base = "$"
+            
+            # Конвертируем всё в USD для универсального хранения
+            last_val = float(df['Close'].iloc[-1])
+            p_usd = last_val / r_map[base] if base != "EUR" else last_val * r_map["EUR"]
+            
+            returns = df['Close'].pct_change().dropna()
+            clean_assets.append({
+                "T": t, "P_USD": p_usd, "AVG": returns.mean(), "STD": returns.std(), 
+                "CH": (df['Close'].iloc[-1]/df['Close'].iloc[0]-1), "DF": df, "BASE": base
+            })
         except: continue
-    return res, r_map
+    return clean_assets, r_map
 
-# --- 4. РАБОЧАЯ ПАНЕЛЬ ---
+# --- 4. ЛОГИКА ТЕРМИНАЛА ---
 ln = st.sidebar.radio("LANGUAGE", ["RU", "EN"])
 m_sel = st.sidebar.selectbox(UI[ln]["market"], list(DB.keys()))
 c_sel = st.sidebar.radio(UI[ln]["curr"], ["USD ($)", "RUB (₽)", "KZT (₸)"])
-depo_input = st.sidebar.number_input(UI[ln]["depo"], value=1000)
+capital = st.sidebar.number_input(UI[ln]["depo"], value=1000)
 
-assets, rates = get_raw_data(m_sel)
+assets, all_rates = get_global_data(m_sel)
 sign = c_sel.split("(")[1][0]
-current_rate = rates.get(sign, 1.0)
+target_rate = all_rates[sign]
 
 st.title("🚀 ABI ANALITIC")
 
 if assets:
-    # 1. ТАБЛИЦА ТОП-15 С СОРТИРОВКОЙ
+    # ТАБЛИЦА ТОП-15 (СОРТИРОВКА + КОНВЕРТАЦИЯ)
     df_top = pd.DataFrame(assets)
-    df_top["PRICE"] = (df_top["P_USD"] * current_rate).round(2)
+    df_top["PRICE"] = (df_top["P_USD"] * target_rate).round(2)
     df_top = df_top.sort_values(by="CH", ascending=False).reset_index(drop=True)
     df_top.index += 1
     
     st.subheader(UI[ln]["top"])
     st.dataframe(df_top[["T", "PRICE"]], use_container_width=True, height=455)
 
-    # 2. ВЫБОР И КОНВЕРТАЦИЯ
+    # АНАЛИЗ ВЫБРАННОГО АКТИВА
     target_t = st.selectbox(UI[ln]["select"], df_top["T"].tolist())
     item = next(x for x in assets if x['T'] == target_t)
     
-    p_now = item['P_USD'] * current_rate
-    # Конвертируем капитал в расчетную единицу
-    mu, sigma = item['AVG'], item['STD'] if item['STD'] > 0 else 0.015
+    # ТЕКУЩАЯ ЦЕНА В ВЫБРАННОЙ ВАЛЮТЕ
+    price_now = item['P_USD'] * target_rate
+    mu, sigma = item['AVG'], item['STD'] if item['STD'] > 0 else 0.02
     
-    # Расчет 7 дней с учетом валюты
+    # ГЕНЕРАЦИЯ ПРОГНОЗА
     future_prices = []
-    curr = p_now
+    temp_p = price_now
     for _ in range(7):
-        curr *= (1 + np.random.normal(mu, sigma))
-        future_prices.append(curr)
+        temp_p *= (1 + np.random.normal(mu, sigma))
+        future_prices.append(temp_p)
     
-    # Профит теперь жестко в выбранной валюте
-    profits = [(p * (depo_input / p_now)) - depo_input for p in future_prices]
+    # ТОЧНЫЙ РАСЧЕТ ПРОФИТА В ДЕНЬГАХ
+    # Формула: (Цена_Будущая - Цена_Сейчас) * (Капитал / Цена_Сейчас)
+    daily_profits = [(p - price_now) * (capital / price_now) for p in future_prices]
 
-    # 3. КАРТОЧКИ
+    # МЕТРИКИ (КАРТОЧКИ)
     c1, c2, c3 = st.columns(3)
-    c1.markdown(f"<div class='metric-card'>{UI[ln]['now']}<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
+    c1.markdown(f"<div class='metric-card'>{UI[ln]['now']}<br><h3>{price_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='metric-card'>{UI[ln]['target']}<br><h3>{future_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     
-    p_final = profits[-1]
-    p_style = "error-card" if p_final < 0 else "metric-card"
-    c3.markdown(f"<div class='{p_style}'>{UI[ln]['profit']}<br><h3>{p_final:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
+    final_profit = daily_profits[-1]
+    card_style = "error-card" if final_profit < 0 else "metric-card"
+    c3.markdown(f"<div class='{card_style}'>{UI[ln]['profit']}<br><h3>{final_profit:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
 
-    # 4. ГРАФИК И РАЗБОР
+    # ГРАФИК И ТАБЛИЦА
     st.divider()
     col_chart, col_table = st.columns([2, 1])
     
     with col_chart:
         st.subheader(UI[ln]["forecast"])
-        # История + Прогноз в выбранной валюте
-        hist_p = (item['DF']['Close'].tail(14).values / item['P_USD'] * p_now) 
+        # Синхронизация истории с текущей валютой
+        hist_p = (item['DF']['Close'].tail(14).values / (item['P_USD'] / price_now)) 
         st.line_chart(np.append(hist_p, future_prices), color="#00ffcc")
 
     with col_table:
-        days_idx = [(datetime.now() + timedelta(days=i)).strftime('%d.%m') for i in range(1, 8)]
+        dates = [(datetime.now() + timedelta(days=i)).strftime('%d.%m') for i in range(1, 8)]
         breakdown = pd.DataFrame({
-            UI[ln]["day"]: days_idx,
+            UI[ln]["day"]: dates,
             UI[ln]["price"]: [f"{p:,.2f}" for p in future_prices],
-            UI[ln]["profit"]: [f"{pr:,.2f} {sign}" for pr in profits] # Валюта в таблице!
+            UI[ln]["profit"]: [f"{pr:,.2f} {sign}" for pr in daily_profits]
         })
         st.table(breakdown)
 
-    sig = UI[ln]["sell"] if p_final < 0 else UI[ln]["buy"]
-    st.markdown(f"<h2 style='text-align:center; color:{'#ff4b4b' if p_final < 0 else '#00ffcc'} !important; border: 2px solid;'>{UI[ln]['signal']}: {sig}</h2>", unsafe_allow_html=True)
+    sig_text = UI[ln]["sell"] if final_profit < 0 else UI[ln]["buy"]
+    st.markdown(f"<h2 style='text-align:center; color:{'#ff4b4b' if final_profit < 0 else '#00ffcc'} !important; border: 2px solid;'>{UI[ln]['signal']}: {sig_text}</h2>", unsafe_allow_html=True)
