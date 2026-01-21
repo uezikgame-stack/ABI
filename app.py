@@ -19,12 +19,12 @@ st.markdown("""
 # --- 2. ЛОКАЛИЗАЦИЯ ---
 UI = {
     "RU": {
-        "market": "РЫНОК", "curr": "ВАЛЮТА", "depo": "КАПИТАЛ", "top": "ТОП 15 АКТИВОВ",
+        "market": "РЫНОК", "curr": "ВАЛЮТА", "depo": "КАПИТАЛ", "top": "РЕЙТИНГ АКТИВОВ (ТОП 15)",
         "select": "ВЫБЕРИ ДЛЯ АНАЛИЗА:", "now": "ТЕКУЩАЯ", "target": "ЦЕЛЬ (7д)", "profit": "ПРОФИТ",
         "signal": "СИГНАЛ", "buy": "ПОКУПАТЬ", "sell": "ПРОДАВАТЬ", "day": "ДЕНЬ", "price": "ЦЕНА", "forecast": "АНАЛИЗ: ИСТОРИЯ И ПРОГНОЗ"
     },
     "EN": {
-        "market": "MARKET", "curr": "CURRENCY", "depo": "CAPITAL", "top": "TOP 15 ASSETS",
+        "market": "MARKET", "curr": "CURRENCY", "depo": "CAPITAL", "top": "ASSET RATING (TOP 15)",
         "select": "SELECT FOR ANALYSIS:", "now": "CURRENT", "target": "TARGET (7d)", "profit": "PROFIT",
         "signal": "SIGNAL", "buy": "BUY", "sell": "SELL", "day": "DAY", "price": "PRICE", "forecast": "ANALYSIS: HISTORY & FORECAST"
     }
@@ -32,6 +32,8 @@ UI = {
 
 # --- 3. БАЗА (15 АКТИВОВ) ---
 DB = {
+    "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ", "ASBN.KZ", "BAST.KZ", "KMCP.KZ", "KASE.KZ", "KZIP.KZ", "KZMZ.KZ"],
+    "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA", "MBG.DE", "DHL.DE", "SAN.MC", "ALV.DE", "CS.PA", "BBVA.MC", "OR.PA"],
     "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL", "META", "INTC", "ADBE", "CRM", "AVGO", "QCOM", "PYPL"],
     "CHINA": ["BABA", "BIDU", "JD", "PDD", "LI", "NIO", "TCEHY", "BYDDY", "XPEV", "NTES", "MCHI", "KWEB", "FUTU", "BILI", "VIPS"],
     "RF (Россия)": ["SBER.ME", "GAZP.ME", "LKOH.ME", "YNDX", "ROSN.ME", "MGNT.ME", "NVTK.ME", "GMKN.ME", "TATN.ME", "CHMF.ME", "ALRS.ME", "MTSS.ME", "NLMK.ME", "PLZL.ME", "VTBR.ME"],
@@ -52,8 +54,10 @@ def get_data(m_name):
             returns = df['Close'].pct_change().dropna()
             avg_ret, std_dev = returns.mean(), returns.std()
             last_p = float(df['Close'].iloc[-1])
-            conv = r_map["₽"] if ".ME" in t else 1.0
-            res.append({"T": t, "P": last_p / conv, "AVG": avg_ret, "STD": std_dev, "DF": df, "CNV": conv})
+            conv = r_map["₽"] if ".ME" in t else r_map["₸"] if (".KZ" in t or "KCZ" in t) else 1.0
+            # CH - изменение для сортировки
+            ch = (df['Close'].iloc[-1] / df['Close'].iloc[0]) - 1
+            res.append({"T": t, "P": last_p / conv, "AVG": avg_ret, "STD": std_dev, "DF": df, "CNV": conv, "CH": ch})
         except: continue
     return res, r_map
 
@@ -70,20 +74,23 @@ rate = rates.get(sign, 1.0)
 st.title("🚀 ABI ANALITIC")
 
 if assets:
+    # ТАБЛИЦА С СОРТИРОВКОЙ И ЦИФРАМИ
     df_top = pd.DataFrame(assets)
+    df_top = df_top.sort_values(by="CH", ascending=False).reset_index(drop=True)
+    df_top.index += 1 # Начинаем с 1
     df_top["PRICE"] = (df_top["P"] * rate).round(2)
+    
     st.subheader(UI[ln]["top"])
-    st.dataframe(df_top[["T", "PRICE"]].set_index("T"), use_container_width=True, height=455)
+    st.dataframe(df_top[["T", "PRICE"]], use_container_width=True, height=455)
 
+    # ВЫБОР АКТИВА
     target_t = st.selectbox(UI[ln]["select"], df_top["T"].tolist())
     item = next(x for x in assets if x['T'] == target_t)
     
-    # МАТЕМАТИКА ПРОГНОЗА
     p_now = item['P'] * rate
-    mu = -0.015 if "BTC" in target_t else item['AVG']
-    sigma = item['STD'] if item['STD'] > 0 else 0.012
+    mu, sigma = item['AVG'], item['STD'] if item['STD'] > 0 else 0.012
     
-    # Генерация 7 дней будущего
+    # Генерация 7 дней
     future_prices = []
     curr = p_now
     for _ in range(7):
@@ -101,19 +108,16 @@ if assets:
     p_style = "error-card" if p_final < 0 else "metric-card"
     c3.markdown(f"<div class='{p_style}'>{UI[ln]['profit']}<br><h3>{p_final:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
 
-    # --- ГРАФИК КАК В ИНВЕСТИЦИЯХ ---
+    # ГРАФИК
     st.divider()
     st.subheader(UI[ln]["forecast"])
-    
-    # Подготовка данных: История + Будущее
     hist_series = (item['DF']['Close'].tail(14) / item['CNV'] * rate).values
     total_plot = np.append(hist_series, future_prices)
     
     col_chart, col_table = st.columns([2, 1])
     with col_chart:
-        # Инвестиционный график
         st.line_chart(total_plot, color="#00ffcc")
-        st.caption("Левая часть: История (14д) | Правая часть: Прогноз (7д)")
+        st.caption("История (14д) + Прогноз (7д)")
 
     with col_table:
         days_idx = [(datetime.now() + timedelta(days=i)).strftime('%d.%m') for i in range(1, 8)]
