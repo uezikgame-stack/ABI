@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-# --- 1. СТИЛЬ ТЕРМИНАЛА ---
+# --- 1. ТЕРМИНАЛЬНЫЙ СТИЛЬ ---
 st.set_page_config(page_title="ABI ANALITIC", layout="wide")
 st.markdown("""
     <style>
@@ -30,7 +30,7 @@ UI = {
     }
 }
 
-# --- 3. БАЗА (15 АКТИВОВ) ---
+# --- 3. ЖЕСТКАЯ БАЗА 15 ---
 DB = {
     "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ", "ASBN.KZ", "BAST.KZ", "KMCP.KZ", "KASE.KZ", "KZIP.KZ", "KZMZ.KZ"],
     "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA", "MBG.DE", "DHL.DE", "SAN.MC", "ALV.DE", "CS.PA", "BBVA.MC", "OR.PA"],
@@ -40,66 +40,79 @@ DB = {
     "CRYPTO": ["BTC-USD", "ETH-USD", "SOL-USD", "DOT-USD", "ADA-USD", "XRP-USD", "LINK-USD", "AVAX-USD", "DOGE-USD", "MATIC-USD", "TRX-USD", "LTC-USD", "SHIB-USD", "BCH-USD", "NEAR-USD"]
 }
 
-@st.cache_data(ttl=300)
-def get_data(m_name):
+@st.cache_data(ttl=600)
+def get_raw_data(m_name):
     tickers = DB[m_name]
     data = yf.download(tickers, period="1mo", interval="1d", group_by='ticker', progress=False)
-    rates = yf.download(["RUB=X", "KZT=X"], period="1d", progress=False)['Close']
-    r_map = {"₽": float(rates["RUB=X"].iloc[-1]), "$": 1.0, "₸": float(rates["KZT=X"].iloc[-1])}
+    # Берем актуальные курсы для конвертации профита
+    rates_df = yf.download(["RUB=X", "KZT=X", "EURUSD=X"], period="1d", progress=False)['Close']
+    r_map = {
+        "₽": float(rates_df["RUB=X"].iloc[-1]), 
+        "$": 1.0, 
+        "₸": float(rates_df["KZT=X"].iloc[-1]),
+        "EUR": float(rates_df["EURUSD=X"].iloc[-1])
+    }
     
     res = []
     for t in tickers:
         try:
             df = data[t].dropna()
-            returns = df['Close'].pct_change().dropna()
-            avg_ret, std_dev = returns.mean(), returns.std()
+            if df.empty: continue
             last_p = float(df['Close'].iloc[-1])
-            conv = r_map["₽"] if ".ME" in t else r_map["₸"] if (".KZ" in t or "KCZ" in t) else 1.0
-            # CH - изменение для сортировки
+            # Определяем внутреннюю валюту актива
+            if ".ME" in t: base_curr = "₽"
+            elif ".KZ" in t or "KCZ" in t: base_curr = "₸"
+            elif ".PA" in t or ".DE" in t or ".MC" in t: base_curr = "EUR"
+            else: base_curr = "$"
+            
+            # Приводим всё к USD для хранения
+            p_usd = last_p / r_map[base_curr] if base_curr != "EUR" else last_p * r_map["EUR"]
             ch = (df['Close'].iloc[-1] / df['Close'].iloc[0]) - 1
-            res.append({"T": t, "P": last_p / conv, "AVG": avg_ret, "STD": std_dev, "DF": df, "CNV": conv, "CH": ch})
+            res.append({"T": t, "P_USD": p_usd, "CH": ch, "AVG": df['Close'].pct_change().mean(), "STD": df['Close'].pct_change().std(), "DF": df})
         except: continue
     return res, r_map
 
-# --- 4. ОСНОВНОЙ МОДУЛЬ ---
+# --- 4. РАБОЧАЯ ПАНЕЛЬ ---
 ln = st.sidebar.radio("LANGUAGE", ["RU", "EN"])
 m_sel = st.sidebar.selectbox(UI[ln]["market"], list(DB.keys()))
 c_sel = st.sidebar.radio(UI[ln]["curr"], ["USD ($)", "RUB (₽)", "KZT (₸)"])
-depo = st.sidebar.number_input(UI[ln]["depo"], value=1000)
+depo_input = st.sidebar.number_input(UI[ln]["depo"], value=1000)
 
-assets, rates = get_data(m_sel)
+assets, rates = get_raw_data(m_sel)
 sign = c_sel.split("(")[1][0]
-rate = rates.get(sign, 1.0)
+current_rate = rates.get(sign, 1.0)
 
 st.title("🚀 ABI ANALITIC")
 
 if assets:
-    # ТАБЛИЦА С СОРТИРОВКОЙ И ЦИФРАМИ
+    # 1. ТАБЛИЦА ТОП-15 С СОРТИРОВКОЙ
     df_top = pd.DataFrame(assets)
+    df_top["PRICE"] = (df_top["P_USD"] * current_rate).round(2)
     df_top = df_top.sort_values(by="CH", ascending=False).reset_index(drop=True)
-    df_top.index += 1 # Начинаем с 1
-    df_top["PRICE"] = (df_top["P"] * rate).round(2)
+    df_top.index += 1
     
     st.subheader(UI[ln]["top"])
     st.dataframe(df_top[["T", "PRICE"]], use_container_width=True, height=455)
 
-    # ВЫБОР АКТИВА
+    # 2. ВЫБОР И КОНВЕРТАЦИЯ
     target_t = st.selectbox(UI[ln]["select"], df_top["T"].tolist())
     item = next(x for x in assets if x['T'] == target_t)
     
-    p_now = item['P'] * rate
-    mu, sigma = item['AVG'], item['STD'] if item['STD'] > 0 else 0.012
+    p_now = item['P_USD'] * current_rate
+    # Конвертируем капитал в расчетную единицу
+    mu, sigma = item['AVG'], item['STD'] if item['STD'] > 0 else 0.015
     
-    # Генерация 7 дней
+    # Расчет 7 дней с учетом валюты
     future_prices = []
     curr = p_now
     for _ in range(7):
         curr *= (1 + np.random.normal(mu, sigma))
         future_prices.append(curr)
     
-    profits = [(p * (depo/p_now)) - depo for p in future_prices]
+    # Профит теперь жестко в выбранной валюте
+    profits = [(p * (depo_input / p_now)) - depo_input for p in future_prices]
 
-    # КАРТОЧКИ
+    # 3. КАРТОЧКИ
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"<div class='metric-card'>{UI[ln]['now']}<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='metric-card'>{UI[ln]['target']}<br><h3>{future_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
@@ -108,23 +121,22 @@ if assets:
     p_style = "error-card" if p_final < 0 else "metric-card"
     c3.markdown(f"<div class='{p_style}'>{UI[ln]['profit']}<br><h3>{p_final:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
 
-    # ГРАФИК
+    # 4. ГРАФИК И РАЗБОР
     st.divider()
-    st.subheader(UI[ln]["forecast"])
-    hist_series = (item['DF']['Close'].tail(14) / item['CNV'] * rate).values
-    total_plot = np.append(hist_series, future_prices)
-    
     col_chart, col_table = st.columns([2, 1])
+    
     with col_chart:
-        st.line_chart(total_plot, color="#00ffcc")
-        st.caption("История (14д) + Прогноз (7д)")
+        st.subheader(UI[ln]["forecast"])
+        # История + Прогноз в выбранной валюте
+        hist_p = (item['DF']['Close'].tail(14).values / item['P_USD'] * p_now) 
+        st.line_chart(np.append(hist_p, future_prices), color="#00ffcc")
 
     with col_table:
         days_idx = [(datetime.now() + timedelta(days=i)).strftime('%d.%m') for i in range(1, 8)]
         breakdown = pd.DataFrame({
             UI[ln]["day"]: days_idx,
             UI[ln]["price"]: [f"{p:,.2f}" for p in future_prices],
-            UI[ln]["profit"]: [f"{pr:,.2f}" for pr in profits]
+            UI[ln]["profit"]: [f"{pr:,.2f} {sign}" for pr in profits] # Валюта в таблице!
         })
         st.table(breakdown)
 
