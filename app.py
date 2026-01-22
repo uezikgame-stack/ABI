@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# --- 1. КИБЕРПАНК СТИЛЬ ШЭФА ---
+# --- 1. СТИЛЬ ШЭФА (КИБЕРПАНК + ЕДИНАЯ РАМКА) ---
 st.set_page_config(page_title="ABI ANALITIC", layout="wide")
 st.markdown("""
     <style>
@@ -52,13 +52,14 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. ДАННЫЕ ---
+# --- 2. ПОЛНАЯ БИБЛИОТЕКА АКЦИЙ + КИТАЙ ---
 DB = {
-    "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ"],
-    "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA"],
-    "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL"],
-    "RF (Россия)": ["SBER.ME", "GAZP.ME", "LKOH.ME", "YNDX", "ROSN.ME", "MGNT.ME"],
-    "CRYPTO": ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD"]
+    "CHINA (Китай)": ["BABA", "TCEHY", "PDD", "JD", "BIDU", "NIO", "LI", "XPEV", "BYDDY", "BILI", "NTES", "GDS"],
+    "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ", "ASBN.KZ"],
+    "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA", "MBG.DE", "DHL.DE", "ALV.DE", "SAN.MC"],
+    "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL", "META", "INTC", "ADBE", "CRM", "AVGO", "QCOM"],
+    "RF (Россия)": ["SBER.ME", "GAZP.ME", "LKOH.ME", "YNDX", "ROSN.ME", "MGNT.ME", "NVTK.ME", "GMKN.ME", "CHMF.ME", "PLZL.ME"],
+    "CRYPTO": ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "DOT-USD", "LINK-USD"]
 }
 
 @st.cache_data(ttl=300)
@@ -66,15 +67,20 @@ def load_data(m_name):
     try:
         tickers = DB[m_name]
         data = yf.download(tickers, period="1mo", interval="1d", group_by='ticker', progress=False)
-        rates_df = yf.download(["RUB=X", "KZT=X"], period="1d", progress=False)['Close']
-        r_map = {"₽": float(rates_df["RUB=X"].iloc[-1]), "$": 1.0, "₸": float(rates_df["KZT=X"].iloc[-1])}
+        rates_df = yf.download(["RUB=X", "KZT=X", "CNY=X"], period="1d", progress=False)['Close']
+        r_map = {"₽": float(rates_df["RUB=X"].iloc[-1]), "$": 1.0, "₸": float(rates_df["KZT=X"].iloc[-1]), "¥": float(rates_df["CNY=X"].iloc[-1])}
         
         clean = []
         for t in tickers:
             try:
                 df = data[t].dropna()
                 if df.empty: continue
-                b = "₽" if ".ME" in t or t == "YNDX" else ("₸" if ".KZ" in t or "KCZ" in t else "$")
+                # Определение валюты
+                if ".ME" in t or t == "YNDX": b = "₽"
+                elif ".KZ" in t or "KCZ" in t: b = "₸"
+                elif m_name == "CHINA (Китай)": b = "$" # ADR торгуются в USD
+                else: b = "$"
+                
                 curr_p = float(df['Close'].iloc[-1])
                 p_usd = curr_p / r_map[b]
                 clean.append({"T": t, "P_USD": p_usd, "CH": (df['Close'].iloc[-1]/df['Close'].iloc[0]-1), "AVG": df['Close'].pct_change().mean(), "STD": df['Close'].pct_change().std(), "DF": df})
@@ -82,7 +88,7 @@ def load_data(m_name):
         return clean, r_map
     except: return None, None
 
-# --- 3. ИНТЕРФЕЙС ШЭФА ---
+# --- 3. ИНТЕРФЕЙС ---
 st.sidebar.title("ABI SETTINGS")
 m_sel = st.sidebar.selectbox("MARKET", list(DB.keys()))
 c_sel = st.sidebar.radio("CURRENCY", ["USD ($)", "RUB (₽)", "KZT (₸)"])
@@ -96,15 +102,15 @@ else:
     sign = c_sel.split("(")[1][0]
     r_target = rates[sign]
 
+    # Список активов
     df_top = pd.DataFrame(assets)
     df_top["PRICE"] = (df_top["P_USD"] * r_target).apply(lambda x: f"{x:,.2f} {sign}")
-    df_top = df_top.sort_values(by="CH", ascending=False).reset_index(drop=True)
-    
-    st.dataframe(df_top[["T", "PRICE"]], use_container_width=True, height=250)
+    st.dataframe(df_top[["T", "PRICE"]].sort_values("T"), use_container_width=True, height=200, hide_index=True)
 
     t_name = st.selectbox("ВЫБЕРИ ДЛЯ АНАЛИЗА:", df_top["T"].tolist())
     item = next(x for x in assets if x['T'] == t_name)
 
+    # Прогноз
     if "f_usd" not in st.session_state or st.session_state.get("last_t") != t_name:
         mu, sigma = item['AVG'], item['STD'] if item['STD'] > 0 else 0.02
         st.session_state.f_usd = [item['P_USD'] * (1 + np.random.normal(mu, sigma)) for _ in range(7)]
@@ -114,26 +120,26 @@ else:
     f_prices = [p * r_target for p in st.session_state.f_usd]
     profit_pct = ((f_prices[-1] / p_now) - 1) * 100
 
-    # МЕТРИКИ
-    col1, col2, col3 = st.columns(3)
-    col1.markdown(f"<div class='metric-card'>ТЕКУЩАЯ<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
-    col2.markdown(f"<div class='metric-card'>ЦЕЛЬ (7д)<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
+    # Метрики
+    c1, c2, c3 = st.columns(3)
+    c1.markdown(f"<div class='metric-card'>ТЕКУЩАЯ<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
+    c2.markdown(f"<div class='metric-card'>ЦЕЛЬ (7д)<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     
-    # Цвет рамки для профита
-    p_color = "#ff4b4b" if profit_pct < -0.5 else ("#00ffcc" if profit_pct > 0.5 else "#ffcc00")
-    col3.markdown(f"<div class='metric-card' style='border: 1px solid {p_color};'>ПРОФИТ (%)<br><h3>{profit_pct:+.2f} %</h3></div>", unsafe_allow_html=True)
+    # Цвет для УДЕРЖИВАТЬ/КУПИТЬ/ПРОДАТЬ
+    p_color = "#ff4b4b" if profit_pct < -0.7 else ("#00ffcc" if profit_pct > 0.7 else "#ffcc00")
+    c3.markdown(f"<div class='metric-card' style='border: 1px solid {p_color};'>ПРОФИТ (%)<br><h3>{profit_pct:+.2f} %</h3></div>", unsafe_allow_html=True)
 
     st.divider()
-    # ГРАФИК
-    hist_vals = (item['DF']['Close'].tail(14).values / (item['P_USD'] / p_now))
+    st.write("### ГРАФИК ПРОГНОЗА")
+    hist_vals = (item['DF']['Close'].tail(15).values / (item['P_USD'] / p_now))
     st.line_chart(np.append(hist_vals, f_prices), color="#00ffcc")
 
-    # ЛОГИКА СИГНАЛА ОТ ШЭФА
-    if profit_pct > 0.5:
-        sig_text, sig_color = "ПОКУПАТЬ", "#00ffcc"
-    elif profit_pct < -0.5:
-        sig_text, sig_color = "ПРОДАВАТЬ", "#ff4b4b"
+    # СИГНАЛ ДЛЯ ШЭФА
+    if profit_pct > 0.7:
+        sig_t, sig_c = "ПОКУПАТЬ", "#00ffcc"
+    elif profit_pct < -0.7:
+        sig_t, sig_c = "ПРОДАВАТЬ", "#ff4b4b"
     else:
-        sig_text, sig_color = "УДЕРЖИВАТЬ", "#ffcc00" # Желтый для нейтрала
+        sig_t, sig_c = "УДЕРЖИВАТЬ", "#ffcc00"
 
-    st.markdown(f"<h2 style='text-align:center; color:{sig_color} !important; border: 2px solid {sig_color}; padding: 10px; border-radius: 10px;'>СИГНАЛ: {sig_text}</h2>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='text-align:center; color:{sig_c} !important; border: 2px solid {sig_c}; padding: 15px; border-radius: 10px;'>СИГНАЛ: {sig_t}</h2>", unsafe_allow_html=True)
