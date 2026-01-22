@@ -3,53 +3,48 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# --- 1. КИБЕРПАНК СТИЛЬ (НЕОНОВЫЕ ЛИНИИ) ---
+# --- 1. КИБЕРПАНК СТИЛЬ (ФИКС ФОНА И ЛИНИЙ) ---
 st.set_page_config(page_title="ABI ANALITIC", layout="wide")
 st.markdown("""
     <style>
-    /* Анимированный фон */
+    /* Главный фон */
     .stApp {
-        background: linear-gradient(135deg, #020508 25%, #050a10 50%, #020508 75%);
-        background-size: 400% 400%;
-        animation: gradientMove 15s ease infinite;
+        background-color: #020508 !important;
         color: #00ffcc;
-        overflow: hidden;
     }
     
-    /* Неоновые линии на фоне */
+    /* Анимированные неоновые линии */
     .stApp::before {
         content: "";
         position: fixed;
         top: 0; left: 0; width: 100%; height: 100%;
-        background: repeating-linear-gradient(
-            0deg,
-            transparent,
-            transparent 50px,
-            rgba(0, 255, 204, 0.03) 50px,
-            rgba(0, 255, 204, 0.03) 51px
-        );
-        animation: linesMove 20s linear infinite;
-        z-index: 0;
-        pointer-events: none;
+        background: linear-gradient(rgba(0, 255, 204, 0.05) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(0, 255, 204, 0.05) 1px, transparent 1px);
+        background-size: 100px 100px;
+        animation: moveLines 20s linear infinite;
+        z-index: -1;
     }
 
-    @keyframes gradientMove { 0% {background-position: 0% 50%} 50% {background-position: 100% 50%} 100% {background-position: 0% 50%} }
-    @keyframes linesMove { from {transform: translateY(0);} to {transform: translateY(50px);} }
+    @keyframes moveLines {
+        from { background-position: 0 0; }
+        to { background-position: 100px 100px; }
+    }
 
-    .metric-card { background: rgba(0, 0, 0, 0.85); border: 1px solid #00ffcc; padding: 15px; text-align: center; min-height: 110px; position: relative; z-index: 1; }
-    .error-card { background: rgba(255, 75, 75, 0.1); border: 1px solid #ff4b4b; padding: 25px; text-align: center; position: relative; z-index: 1; }
+    /* Карточки и элементы */
+    .metric-card { background: rgba(0, 0, 0, 0.8); border: 1px solid #00ffcc; padding: 15px; text-align: center; min-height: 110px; }
+    .error-card { background: rgba(255, 75, 75, 0.1); border: 1px solid #ff4b4b; padding: 25px; text-align: center; }
     h1, h2, h3, span, label, p { color: #00ffcc !important; }
-    [data-testid="stSidebar"] { background-color: rgba(10, 14, 20, 0.95) !important; z-index: 2; }
+    [data-testid="stSidebar"] { background-color: rgba(10, 14, 20, 0.9) !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. РЫНКИ ---
+# --- 2. БАЗА ДАННЫХ ---
 DB = {
     "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ", "ASBN.KZ", "BAST.KZ", "KMCP.KZ", "KASE.KZ", "KZIP.KZ", "KZMZ.KZ"],
     "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA", "MBG.DE", "DHL.DE", "SAN.MC", "ALV.DE", "CS.PA", "BBVA.MC", "OR.PA"],
     "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL", "META", "INTC", "ADBE", "CRM", "AVGO", "QCOM", "PYPL"],
     "RF (Россия)": ["SBER.ME", "GAZP.ME", "LKOH.ME", "YNDX", "ROSN.ME", "MGNT.ME", "NVTK.ME", "GMKN.ME", "CHMF.ME", "PLZL.ME", "TATN.ME", "MTSS.ME", "ALRS.ME", "AFLT.ME", "MAGN.ME"],
-    "CRYPTO": ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "DOT-USD", "MATIC-USD", "LTC-USD", "SHIB-USD", "TRX-USD", "AVAX-USD", "UNI-USD", "LINK-USD"]
+    "CRYPTO": ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "DOT-USD"]
 }
 
 @st.cache_data(ttl=600)
@@ -80,30 +75,31 @@ def get_data_engine(m_name):
 st.sidebar.title("ABI SETTINGS")
 m_sel = st.sidebar.selectbox("MARKET", list(DB.keys()))
 c_sel = st.sidebar.radio("CURRENCY", ["USD ($)", "RUB (₽)", "KZT (₸)"])
-cap_val = st.sidebar.number_input("CAPITAL", value=1000)
 
 assets, rates = get_data_engine(m_sel)
 st.title("🚀 ABI ANALITIC")
 
 if not assets:
-    # --- ИСПРАВЛЕННЫЙ БЛОК: ТОЛЬКО ДИНО (БЕЗ ЛИШНЕГО ТЕКСТА) ---
+    # --- ИСПРАВЛЕННЫЙ БЛОК: ТОЛЬКО ДИНО (БЕЗ ТЕКСТА) ---
     st.markdown("""
         <div class='error-card'>
             <h1>⚠️ РЕГИОН ВРЕМЕННО НЕДОСТУПЕН</h1>
-            <iframe src="https://chromedino.com/" frameborder="0" scrolling="no" width="100%" height="300" style="border:none; filter: invert(1); margin-top: 20px;"></iframe>
+            <div style="overflow:hidden; height:200px; margin-top:20px;">
+                <iframe src="https://chromedino.com/" frameborder="0" scrolling="no" width="100%" height="300" style="border:none; filter: invert(1) contrast(1.2); margin-top: -60px;"></iframe>
+            </div>
         </div>
     """, unsafe_allow_html=True)
 else:
     sign = c_sel.split("(")[1][0]
     r_target = rates[sign]
 
+    # ТОП 15
     df_top = pd.DataFrame(assets)
     df_top["PRICE"] = (df_top["P_USD"] * r_target).apply(lambda x: f"{x:,.2f} {sign}")
     df_top = df_top.sort_values(by="CH", ascending=False).head(15).reset_index(drop=True)
     df_top.index += 1
-    
     st.subheader(f"ТОП 15 АКТИВОВ ({sign})")
-    st.dataframe(df_top[["T", "PRICE"]], use_container_width=True, height=450)
+    st.dataframe(df_top[["T", "PRICE"]], use_container_width=True, height=400)
 
     t_name = st.selectbox("ВЫБЕРИ ДЛЯ АНАЛИЗА:", df_top["T"].tolist())
     item = next(x for x in assets if x['T'] == t_name)
@@ -117,6 +113,7 @@ else:
     f_prices = [p * r_target for p in st.session_state.f_usd]
     final_profit_pct = ((f_prices[-1] / p_now) - 1) * 100
 
+    # КАРТОЧКИ (ПРОЦЕНТЫ ФИКСИРОВАНЫ)
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"<div class='metric-card'>ТЕКУЩАЯ<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='metric-card'>ЦЕЛЬ (7д)<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
