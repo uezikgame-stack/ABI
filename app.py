@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# --- 1. КИБЕРПАНК СТИЛЬ (ЕДИНАЯ РАМКА + ФОН) ---
+# --- 1. СТИЛЬ ШЭФА (КИБЕРПАНК) ---
 st.set_page_config(page_title="ABI ANALITIC", layout="wide")
 st.markdown("""
     <style>
@@ -18,12 +18,8 @@ st.markdown("""
     @keyframes moveGrid { from { background-position: 0 0; } to { background-position: 50px 50px; } }
 
     .unified-card {
-        background: rgba(0, 0, 0, 0.95);
-        border: 2px solid #ff4b4b;
-        border-radius: 15px;
-        padding: 30px;
-        text-align: center;
-        box-shadow: 0 0 25px rgba(255, 75, 75, 0.3);
+        background: rgba(0, 0, 0, 0.95); border: 2px solid #ff4b4b; border-radius: 15px;
+        padding: 30px; text-align: center; box-shadow: 0 0 25px rgba(255, 75, 75, 0.3);
     }
 
     .dino-crop {
@@ -41,7 +37,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. ГЛОБАЛЬНАЯ БИБЛИОТЕКА АКЦИЙ ---
+# --- 2. ГЛОБАЛЬНАЯ БИБЛИОТЕКА ---
 DB = {
     "CHINA (Китай)": ["BABA", "TCEHY", "PDD", "JD", "BIDU", "NIO", "LI", "BYDDY", "BILI", "NTES"],
     "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ"],
@@ -66,7 +62,10 @@ def load_data(m_name):
                 if df.empty: continue
                 b = "₽" if ".ME" in t or t == "YNDX" else ("₸" if ".KZ" in t or "KCZ" in t else "$")
                 p_usd = float(df['Close'].iloc[-1]) / r_map[b]
-                clean.append({"T": t, "P_USD": p_usd, "CH": (df['Close'].iloc[-1]/df['Close'].iloc[0]-1), "AVG": df['Close'].pct_change().mean(), "STD": df['Close'].pct_change().std(), "DF": df})
+                # Считаем примерный прогноз для сортировки ТОПа
+                mu, sigma = df['Close'].pct_change().mean(), (df['Close'].pct_change().std() or 0.02)
+                f_usd = p_usd * (1 + mu * 7) # Упрощенный прогноз для рейтинга
+                clean.append({"T": t, "P_USD": p_usd, "F_USD": f_usd, "AVG": mu, "STD": sigma, "DF": df})
             except: continue
         return clean, r_map
     except: return None, None
@@ -85,18 +84,27 @@ else:
     sign = c_sel.split("(")[1][0]
     r_target = rates[sign]
 
-    # Список активов
+    # --- ТОП АКТИВОВ (ЛУЧШИЕ НАВЕРХ) ---
+    st.write("## 🔥 ТОП АКТИВОВ")
     df_top = pd.DataFrame(assets)
-    df_top["PRICE"] = (df_top["P_USD"] * r_target).apply(lambda x: f"{x:,.2f} {sign}")
-    st.dataframe(df_top[["T", "PRICE"]].sort_values("T"), use_container_width=True, height=180, hide_index=True)
+    df_top["PROFIT_EST"] = ((df_top["F_USD"] / df_top["P_USD"]) - 1) * 100
+    df_top = df_top.sort_values(by="PROFIT_EST", ascending=False).reset_index(drop=True)
+    df_top.index += 1 # Цифры сверху (нумерация с 1)
+    
+    # Форматируем для таблицы
+    df_show = df_top.copy()
+    df_show["ЦЕНА"] = (df_show["P_USD"] * r_target).apply(lambda x: f"{x:,.2f} {sign}")
+    df_show["ПРОГНОЗ %"] = df_show["PROFIT_EST"].apply(lambda x: f"{x:+.2f}%")
+    
+    st.dataframe(df_show[["T", "ЦЕНА", "ПРОГНОЗ %"]], use_container_width=True, height=250)
 
-    t_name = st.selectbox("ВЫБЕРИ ДЛЯ АНАЛИЗА:", df_top["T"].tolist())
+    # Выбор актива для детального разбора
+    t_name = st.selectbox("ВЫБЕРИ ДЛЯ ДЕТАЛЬНОГО АНАЛИЗА:", df_top["T"].tolist())
     item = next(x for x in assets if x['T'] == t_name)
 
     # Прогноз на 7 дней
     if "f_usd" not in st.session_state or st.session_state.get("last_t") != t_name:
-        mu, sigma = item['AVG'], item['STD'] if item['STD'] > 0 else 0.02
-        st.session_state.f_usd = [item['P_USD'] * (1 + np.random.normal(mu, sigma)) for _ in range(7)]
+        st.session_state.f_usd = [item['P_USD'] * (1 + np.random.normal(item['AVG'], item['STD'])) for _ in range(7)]
         st.session_state.last_t = t_name
 
     p_now = item['P_USD'] * r_target
@@ -112,9 +120,8 @@ else:
 
     st.divider()
 
-    # --- ВОТ ОН, РАЗБОР ПО ДНЯМ (ТАБЛИЦА + ГРАФИК) ---
+    # РАЗБОР ПО ДНЯМ
     col_graph, col_table = st.columns([2, 1])
-    
     with col_graph:
         st.write("### ГРАФИК ПРОГНОЗА")
         hist_vals = (item['DF']['Close'].tail(15).values / (item['P_USD'] / p_now))
@@ -129,7 +136,7 @@ else:
         })
         st.dataframe(forecast_df, hide_index=True, use_container_width=True)
 
-    # ФИНАЛЬНЫЙ СИГНАЛ
+    # СИГНАЛ
     if profit_pct > 0.7: sig_t, sig_c = "ПОКУПАТЬ", "#00ffcc"
     elif profit_pct < -0.7: sig_t, sig_c = "ПРОДАВАТЬ", "#ff4b4b"
     else: sig_t, sig_c = "УДЕРЖИВАТЬ", "#ffcc00"
