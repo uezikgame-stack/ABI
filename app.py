@@ -3,19 +3,47 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# --- 1. НАСТРОЙКИ СТИЛЯ ---
+# --- 1. КИБЕРПАНК СТИЛЬ (НЕОНОВЫЕ ЛИНИИ) ---
 st.set_page_config(page_title="ABI ANALITIC", layout="wide")
 st.markdown("""
     <style>
-    .stApp { background-color: #020508; color: #00ffcc; }
-    .metric-card { background: rgba(0, 0, 0, 0.9); border: 1px solid #00ffcc; padding: 15px; text-align: center; min-height: 110px; }
-    .error-card { background: rgba(255, 75, 75, 0.2); border: 1px solid #ff4b4b; padding: 15px; text-align: center; min-height: 110px; }
+    /* Анимированный фон */
+    .stApp {
+        background: linear-gradient(135deg, #020508 25%, #050a10 50%, #020508 75%);
+        background-size: 400% 400%;
+        animation: gradientMove 15s ease infinite;
+        color: #00ffcc;
+        overflow: hidden;
+    }
+    
+    /* Неоновые линии на фоне */
+    .stApp::before {
+        content: "";
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 50px,
+            rgba(0, 255, 204, 0.03) 50px,
+            rgba(0, 255, 204, 0.03) 51px
+        );
+        animation: linesMove 20s linear infinite;
+        z-index: 0;
+        pointer-events: none;
+    }
+
+    @keyframes gradientMove { 0% {background-position: 0% 50%} 50% {background-position: 100% 50%} 100% {background-position: 0% 50%} }
+    @keyframes linesMove { from {transform: translateY(0);} to {transform: translateY(50px);} }
+
+    .metric-card { background: rgba(0, 0, 0, 0.85); border: 1px solid #00ffcc; padding: 15px; text-align: center; min-height: 110px; position: relative; z-index: 1; }
+    .error-card { background: rgba(255, 75, 75, 0.1); border: 1px solid #ff4b4b; padding: 25px; text-align: center; position: relative; z-index: 1; }
     h1, h2, h3, span, label, p { color: #00ffcc !important; }
-    [data-testid="stSidebar"] { background-color: #0a0e14 !important; }
+    [data-testid="stSidebar"] { background-color: rgba(10, 14, 20, 0.95) !important; z-index: 2; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. ВСЕ РЕГИОНЫ ---
+# --- 2. РЫНКИ ---
 DB = {
     "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ", "ASBN.KZ", "BAST.KZ", "KMCP.KZ", "KASE.KZ", "KZIP.KZ", "KZMZ.KZ"],
     "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA", "MBG.DE", "DHL.DE", "SAN.MC", "ALV.DE", "CS.PA", "BBVA.MC", "OR.PA"],
@@ -48,7 +76,7 @@ def get_data_engine(m_name):
         return clean, r_map
     except: return None, None
 
-# --- 3. ИНТЕРФЕЙС УПРАВЛЕНИЯ ---
+# --- 3. ИНТЕРФЕЙС ---
 st.sidebar.title("ABI SETTINGS")
 m_sel = st.sidebar.selectbox("MARKET", list(DB.keys()))
 c_sel = st.sidebar.radio("CURRENCY", ["USD ($)", "RUB (₽)", "KZT (₸)"])
@@ -58,12 +86,11 @@ assets, rates = get_data_engine(m_sel)
 st.title("🚀 ABI ANALITIC")
 
 if not assets:
-    # --- ИСПРАВЛЕННЫЙ БЛОК С ДИНОЗАВРИКОМ ---
+    # --- ИСПРАВЛЕННЫЙ БЛОК: ТОЛЬКО ДИНО (БЕЗ ЛИШНЕГО ТЕКСТА) ---
     st.markdown("""
         <div class='error-card'>
             <h1>⚠️ РЕГИОН ВРЕМЕННО НЕДОСТУПЕН</h1>
-            <iframe src="https://chromedino.com/" frameborder="0" scrolling="no" width="100%" height="300" style="border:none; filter: invert(1);"></iframe>
-            <p>Пока данные грузятся, побей рекорд!</p>
+            <iframe src="https://chromedino.com/" frameborder="0" scrolling="no" width="100%" height="300" style="border:none; filter: invert(1); margin-top: 20px;"></iframe>
         </div>
     """, unsafe_allow_html=True)
 else:
@@ -71,8 +98,7 @@ else:
     r_target = rates[sign]
 
     df_top = pd.DataFrame(assets)
-    df_top["PRICE_RAW"] = df_top["P_USD"] * r_target
-    df_top["PRICE"] = df_top["PRICE_RAW"].apply(lambda x: f"{x:,.2f} {sign}")
+    df_top["PRICE"] = (df_top["P_USD"] * r_target).apply(lambda x: f"{x:,.2f} {sign}")
     df_top = df_top.sort_values(by="CH", ascending=False).head(15).reset_index(drop=True)
     df_top.index += 1
     
