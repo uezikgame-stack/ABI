@@ -3,11 +3,10 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# --- 1. СТИЛЬ ОТ ШЭФА (НЕОН + ЕДИНАЯ РАМКА) ---
+# --- 1. КИБЕРПАНК СТИЛЬ ШЭФА ---
 st.set_page_config(page_title="ABI ANALITIC", layout="wide")
 st.markdown("""
     <style>
-    /* Анимированная неоновая сетка на фоне */
     .stApp {
         background-color: #020508 !important;
         background-image: 
@@ -17,12 +16,8 @@ st.markdown("""
         animation: moveGrid 15s linear infinite;
         color: #00ffcc;
     }
-    @keyframes moveGrid {
-        from { background-position: 0 0; }
-        to { background-position: 50px 50px; }
-    }
+    @keyframes moveGrid { from { background-position: 0 0; } to { background-position: 50px 50px; } }
 
-    /* ЕДИНАЯ РАМКА ДЛЯ ОШИБКИ И ИГРЫ */
     .unified-card {
         background: rgba(0, 0, 0, 0.95);
         border: 2px solid #ff4b4b;
@@ -33,7 +28,6 @@ st.markdown("""
         box-shadow: 0 0 25px rgba(255, 75, 75, 0.3);
     }
 
-    /* Очистка игрового поля Дино */
     .dino-crop {
         overflow: hidden;
         height: 180px;
@@ -45,73 +39,101 @@ st.markdown("""
     }
     .dino-crop iframe {
         position: absolute;
-        top: -105px; /* Убираем текст сверху */
+        top: -105px; 
         left: 0;
         width: 100%;
         height: 400px;
         filter: invert(1) hue-rotate(180deg) contrast(1.4);
     }
 
-    .metric-card { background: rgba(0, 0, 0, 0.9); border: 1px solid #00ffcc; padding: 15px; text-align: center; }
+    .metric-card { background: rgba(0, 0, 0, 0.9); border: 1px solid #00ffcc; padding: 15px; text-align: center; border-radius: 10px; }
     h1, h2, h3, span, label, p { color: #00ffcc !important; }
     [data-testid="stSidebar"] { background-color: rgba(10, 14, 20, 0.95) !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. ЛОГИКА ДАННЫХ ---
+# --- 2. ДАННЫЕ ---
 DB = {
-    "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ", "ASBN.KZ", "BAST.KZ", "KMCP.KZ", "KASE.KZ", "KZIP.KZ", "KZMZ.KZ"],
-    "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA", "MBG.DE", "DHL.DE", "SAN.MC", "ALV.DE", "CS.PA", "BBVA.MC", "OR.PA"],
-    "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL", "META", "INTC", "ADBE", "CRM", "AVGO", "QCOM", "PYPL"],
-    "RF (Россия)": ["SBER.ME", "GAZP.ME", "LKOH.ME", "YNDX", "ROSN.ME", "MGNT.ME", "NVTK.ME", "GMKN.ME", "CHMF.ME", "PLZL.ME", "TATN.ME", "MTSS.ME", "ALRS.ME", "AFLT.ME", "MAGN.ME"],
-    "CRYPTO": ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "DOT-USD"]
+    "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ"],
+    "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA"],
+    "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL"],
+    "RF (Россия)": ["SBER.ME", "GAZP.ME", "LKOH.ME", "YNDX", "ROSN.ME", "MGNT.ME"],
+    "CRYPTO": ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD"]
 }
 
-@st.cache_data(ttl=600)
-def get_data_engine(m_name):
+@st.cache_data(ttl=300)
+def load_data(m_name):
     try:
         tickers = DB[m_name]
         data = yf.download(tickers, period="1mo", interval="1d", group_by='ticker', progress=False)
-        rates_df = yf.download(["RUB=X", "KZT=X", "EURUSD=X"], period="1d", progress=False)['Close']
-        r_map = {"₽": float(rates_df["RUB=X"].iloc[-1]), "$": 1.0, "₸": float(rates_df["KZT=X"].iloc[-1]), "EUR": float(rates_df["EURUSD=X"].iloc[-1])}
+        rates_df = yf.download(["RUB=X", "KZT=X"], period="1d", progress=False)['Close']
+        r_map = {"₽": float(rates_df["RUB=X"].iloc[-1]), "$": 1.0, "₸": float(rates_df["KZT=X"].iloc[-1])}
         
         clean = []
         for t in tickers:
             try:
                 df = data[t].dropna()
                 if df.empty: continue
-                if any(x in t for x in [".ME", "YNDX"]): b = "₽"
-                elif any(x in t for x in [".KZ", "KCZ"]): b = "₸"
-                elif any(x in t for x in [".PA", ".DE", ".MC"]): b = "EUR"
-                else: b = "$"
+                b = "₽" if ".ME" in t or t == "YNDX" else ("₸" if ".KZ" in t or "KCZ" in t else "$")
                 curr_p = float(df['Close'].iloc[-1])
-                p_usd = curr_p / r_map[b] if b != "EUR" else curr_p * r_map["EUR"]
+                p_usd = curr_p / r_map[b]
                 clean.append({"T": t, "P_USD": p_usd, "CH": (df['Close'].iloc[-1]/df['Close'].iloc[0]-1), "AVG": df['Close'].pct_change().mean(), "STD": df['Close'].pct_change().std(), "DF": df})
             except: continue
         return clean, r_map
     except: return None, None
 
-# --- 3. ИНТЕРФЕЙС ---
+# --- 3. ИНТЕРФЕЙС ШЭФА ---
 st.sidebar.title("ABI SETTINGS")
 m_sel = st.sidebar.selectbox("MARKET", list(DB.keys()))
 c_sel = st.sidebar.radio("CURRENCY", ["USD ($)", "RUB (₽)", "KZT (₸)"])
 
-assets, rates = get_data_engine(m_sel)
+assets, rates = load_data(m_sel)
 st.title("🚀 ABI ANALITIC")
 
 if not assets:
-    # --- ЕДИНАЯ РАМКА С ОБНОВЛЕННЫМ ТЕКСТОМ ---
-    st.markdown(f"""
-        <div class="unified-card">
-            <h1>⚠️ {m_sel} ВРЕМЕННО НЕДОСТУПЕН</h1>
-            <div class="dino-crop">
-                <iframe src="https://chromedino.com/" frameborder="0" scrolling="no"></iframe>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"""<div class="unified-card"><h1>⚠️ {m_sel} ВРЕМЕННО НЕДОСТУПЕН</h1><div class="dino-crop"><iframe src="https://chromedino.com/" frameborder="0" scrolling="no"></iframe></div></div>""", unsafe_allow_html=True)
 else:
     sign = c_sel.split("(")[1][0]
     r_target = rates[sign]
+
+    df_top = pd.DataFrame(assets)
+    df_top["PRICE"] = (df_top["P_USD"] * r_target).apply(lambda x: f"{x:,.2f} {sign}")
+    df_top = df_top.sort_values(by="CH", ascending=False).reset_index(drop=True)
     
-    # ... (остальная часть кода для отображения графиков и прогнозов) ...
-    st.success("Данные загружены, шэф!")
+    st.dataframe(df_top[["T", "PRICE"]], use_container_width=True, height=250)
+
+    t_name = st.selectbox("ВЫБЕРИ ДЛЯ АНАЛИЗА:", df_top["T"].tolist())
+    item = next(x for x in assets if x['T'] == t_name)
+
+    if "f_usd" not in st.session_state or st.session_state.get("last_t") != t_name:
+        mu, sigma = item['AVG'], item['STD'] if item['STD'] > 0 else 0.02
+        st.session_state.f_usd = [item['P_USD'] * (1 + np.random.normal(mu, sigma)) for _ in range(7)]
+        st.session_state.last_t = t_name
+
+    p_now = item['P_USD'] * r_target
+    f_prices = [p * r_target for p in st.session_state.f_usd]
+    profit_pct = ((f_prices[-1] / p_now) - 1) * 100
+
+    # МЕТРИКИ
+    col1, col2, col3 = st.columns(3)
+    col1.markdown(f"<div class='metric-card'>ТЕКУЩАЯ<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
+    col2.markdown(f"<div class='metric-card'>ЦЕЛЬ (7д)<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
+    
+    # Цвет рамки для профита
+    p_color = "#ff4b4b" if profit_pct < -0.5 else ("#00ffcc" if profit_pct > 0.5 else "#ffcc00")
+    col3.markdown(f"<div class='metric-card' style='border: 1px solid {p_color};'>ПРОФИТ (%)<br><h3>{profit_pct:+.2f} %</h3></div>", unsafe_allow_html=True)
+
+    st.divider()
+    # ГРАФИК
+    hist_vals = (item['DF']['Close'].tail(14).values / (item['P_USD'] / p_now))
+    st.line_chart(np.append(hist_vals, f_prices), color="#00ffcc")
+
+    # ЛОГИКА СИГНАЛА ОТ ШЭФА
+    if profit_pct > 0.5:
+        sig_text, sig_color = "ПОКУПАТЬ", "#00ffcc"
+    elif profit_pct < -0.5:
+        sig_text, sig_color = "ПРОДАВАТЬ", "#ff4b4b"
+    else:
+        sig_text, sig_color = "УДЕРЖИВАТЬ", "#ffcc00" # Желтый для нейтрала
+
+    st.markdown(f"<h2 style='text-align:center; color:{sig_color} !important; border: 2px solid {sig_color}; padding: 10px; border-radius: 10px;'>СИГНАЛ: {sig_text}</h2>", unsafe_allow_html=True)
