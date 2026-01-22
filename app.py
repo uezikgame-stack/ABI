@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# --- 1. СТИЛЬ ШЭФА (КИБЕРПАНК + ЕДИНАЯ РАМКА) ---
+# --- 1. КИБЕРПАНК СТИЛЬ (ЕДИНАЯ РАМКА + ФОН) ---
 st.set_page_config(page_title="ABI ANALITIC", layout="wide")
 st.markdown("""
     <style>
@@ -14,7 +14,6 @@ st.markdown("""
             linear-gradient(90deg, rgba(0, 255, 204, 0.1) 1px, transparent 1px);
         background-size: 50px 50px;
         animation: moveGrid 15s linear infinite;
-        color: #00ffcc;
     }
     @keyframes moveGrid { from { background-position: 0 0; } to { background-position: 50px 50px; } }
 
@@ -24,25 +23,15 @@ st.markdown("""
         border-radius: 15px;
         padding: 30px;
         text-align: center;
-        margin-top: 20px;
         box-shadow: 0 0 25px rgba(255, 75, 75, 0.3);
     }
 
     .dino-crop {
-        overflow: hidden;
-        height: 180px;
-        width: 100%;
-        margin-top: 20px;
-        border-radius: 8px;
-        position: relative;
-        background: black;
+        overflow: hidden; height: 180px; width: 100%;
+        margin-top: 20px; border-radius: 8px; position: relative; background: black;
     }
     .dino-crop iframe {
-        position: absolute;
-        top: -105px; 
-        left: 0;
-        width: 100%;
-        height: 400px;
+        position: absolute; top: -105px; left: 0; width: 100%; height: 400px;
         filter: invert(1) hue-rotate(180deg) contrast(1.4);
     }
 
@@ -52,14 +41,14 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. ПОЛНАЯ БИБЛИОТЕКА АКЦИЙ + КИТАЙ ---
+# --- 2. ГЛОБАЛЬНАЯ БИБЛИОТЕКА АКЦИЙ ---
 DB = {
-    "CHINA (Китай)": ["BABA", "TCEHY", "PDD", "JD", "BIDU", "NIO", "LI", "XPEV", "BYDDY", "BILI", "NTES", "GDS"],
-    "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ", "ASBN.KZ"],
-    "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA", "MBG.DE", "DHL.DE", "ALV.DE", "SAN.MC"],
-    "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL", "META", "INTC", "ADBE", "CRM", "AVGO", "QCOM"],
-    "RF (Россия)": ["SBER.ME", "GAZP.ME", "LKOH.ME", "YNDX", "ROSN.ME", "MGNT.ME", "NVTK.ME", "GMKN.ME", "CHMF.ME", "PLZL.ME"],
-    "CRYPTO": ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "DOT-USD", "LINK-USD"]
+    "CHINA (Китай)": ["BABA", "TCEHY", "PDD", "JD", "BIDU", "NIO", "LI", "BYDDY", "BILI", "NTES"],
+    "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ"],
+    "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA", "MBG.DE", "DHL.DE"],
+    "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL", "META", "INTC", "CRM"],
+    "RF (Россия)": ["SBER.ME", "GAZP.ME", "LKOH.ME", "YNDX", "ROSN.ME", "MGNT.ME", "NVTK.ME", "GMKN.ME"],
+    "CRYPTO": ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "DOGE-USD"]
 }
 
 @st.cache_data(ttl=300)
@@ -75,14 +64,8 @@ def load_data(m_name):
             try:
                 df = data[t].dropna()
                 if df.empty: continue
-                # Определение валюты
-                if ".ME" in t or t == "YNDX": b = "₽"
-                elif ".KZ" in t or "KCZ" in t: b = "₸"
-                elif m_name == "CHINA (Китай)": b = "$" # ADR торгуются в USD
-                else: b = "$"
-                
-                curr_p = float(df['Close'].iloc[-1])
-                p_usd = curr_p / r_map[b]
+                b = "₽" if ".ME" in t or t == "YNDX" else ("₸" if ".KZ" in t or "KCZ" in t else "$")
+                p_usd = float(df['Close'].iloc[-1]) / r_map[b]
                 clean.append({"T": t, "P_USD": p_usd, "CH": (df['Close'].iloc[-1]/df['Close'].iloc[0]-1), "AVG": df['Close'].pct_change().mean(), "STD": df['Close'].pct_change().std(), "DF": df})
             except: continue
         return clean, r_map
@@ -105,12 +88,12 @@ else:
     # Список активов
     df_top = pd.DataFrame(assets)
     df_top["PRICE"] = (df_top["P_USD"] * r_target).apply(lambda x: f"{x:,.2f} {sign}")
-    st.dataframe(df_top[["T", "PRICE"]].sort_values("T"), use_container_width=True, height=200, hide_index=True)
+    st.dataframe(df_top[["T", "PRICE"]].sort_values("T"), use_container_width=True, height=180, hide_index=True)
 
     t_name = st.selectbox("ВЫБЕРИ ДЛЯ АНАЛИЗА:", df_top["T"].tolist())
     item = next(x for x in assets if x['T'] == t_name)
 
-    # Прогноз
+    # Прогноз на 7 дней
     if "f_usd" not in st.session_state or st.session_state.get("last_t") != t_name:
         mu, sigma = item['AVG'], item['STD'] if item['STD'] > 0 else 0.02
         st.session_state.f_usd = [item['P_USD'] * (1 + np.random.normal(mu, sigma)) for _ in range(7)]
@@ -120,26 +103,35 @@ else:
     f_prices = [p * r_target for p in st.session_state.f_usd]
     profit_pct = ((f_prices[-1] / p_now) - 1) * 100
 
-    # Метрики
+    # МЕТРИКИ
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"<div class='metric-card'>ТЕКУЩАЯ<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='metric-card'>ЦЕЛЬ (7д)<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
-    
-    # Цвет для УДЕРЖИВАТЬ/КУПИТЬ/ПРОДАТЬ
     p_color = "#ff4b4b" if profit_pct < -0.7 else ("#00ffcc" if profit_pct > 0.7 else "#ffcc00")
     c3.markdown(f"<div class='metric-card' style='border: 1px solid {p_color};'>ПРОФИТ (%)<br><h3>{profit_pct:+.2f} %</h3></div>", unsafe_allow_html=True)
 
     st.divider()
-    st.write("### ГРАФИК ПРОГНОЗА")
-    hist_vals = (item['DF']['Close'].tail(15).values / (item['P_USD'] / p_now))
-    st.line_chart(np.append(hist_vals, f_prices), color="#00ffcc")
 
-    # СИГНАЛ ДЛЯ ШЭФА
-    if profit_pct > 0.7:
-        sig_t, sig_c = "ПОКУПАТЬ", "#00ffcc"
-    elif profit_pct < -0.7:
-        sig_t, sig_c = "ПРОДАВАТЬ", "#ff4b4b"
-    else:
-        sig_t, sig_c = "УДЕРЖИВАТЬ", "#ffcc00"
+    # --- ВОТ ОН, РАЗБОР ПО ДНЯМ (ТАБЛИЦА + ГРАФИК) ---
+    col_graph, col_table = st.columns([2, 1])
+    
+    with col_graph:
+        st.write("### ГРАФИК ПРОГНОЗА")
+        hist_vals = (item['DF']['Close'].tail(15).values / (item['P_USD'] / p_now))
+        st.line_chart(np.append(hist_vals, f_prices), color="#00ffcc")
+
+    with col_table:
+        st.write("### РАЗБОР ПО ДНЯМ")
+        forecast_df = pd.DataFrame({
+            "ДЕНЬ": [f"День {i+1}" for i in range(7)],
+            "ЦЕНА": [f"{p:,.2f} {sign}" for p in f_prices],
+            "ПРОФИТ": [f"{((p/p_now)-1)*100:+.2f} %" for p in f_prices]
+        })
+        st.dataframe(forecast_df, hide_index=True, use_container_width=True)
+
+    # ФИНАЛЬНЫЙ СИГНАЛ
+    if profit_pct > 0.7: sig_t, sig_c = "ПОКУПАТЬ", "#00ffcc"
+    elif profit_pct < -0.7: sig_t, sig_c = "ПРОДАВАТЬ", "#ff4b4b"
+    else: sig_t, sig_c = "УДЕРЖИВАТЬ", "#ffcc00"
 
     st.markdown(f"<h2 style='text-align:center; color:{sig_c} !important; border: 2px solid {sig_c}; padding: 15px; border-radius: 10px;'>СИГНАЛ: {sig_t}</h2>", unsafe_allow_html=True)
