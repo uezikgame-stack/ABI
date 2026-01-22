@@ -7,34 +7,39 @@ import numpy as np
 st.set_page_config(page_title="ABI ANALITIC", layout="wide")
 st.markdown("""
     <style>
-    /* Главный фон */
+    /* Главный фон и анимированная сетка */
     .stApp {
         background-color: #020508 !important;
+        background-image: 
+            linear-gradient(rgba(0, 255, 204, 0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0, 255, 204, 0.1) 1px, transparent 1px);
+        background-size: 60px 60px;
+        animation: moveGrid 10s linear infinite;
         color: #00ffcc;
     }
-    
-    /* Анимированные неоновые линии */
-    .stApp::before {
-        content: "";
-        position: fixed;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background: linear-gradient(rgba(0, 255, 204, 0.05) 1px, transparent 1px),
-                    linear-gradient(90deg, rgba(0, 255, 204, 0.05) 1px, transparent 1px);
-        background-size: 100px 100px;
-        animation: moveLines 20s linear infinite;
-        z-index: -1;
-    }
 
-    @keyframes moveLines {
+    @keyframes moveGrid {
         from { background-position: 0 0; }
-        to { background-position: 100px 100px; }
+        to { background-position: 60px 60px; }
     }
 
-    /* Карточки и элементы */
-    .metric-card { background: rgba(0, 0, 0, 0.8); border: 1px solid #00ffcc; padding: 15px; text-align: center; min-height: 110px; }
-    .error-card { background: rgba(255, 75, 75, 0.1); border: 1px solid #ff4b4b; padding: 25px; text-align: center; }
+    /* Скрытие мусора в Dino Game */
+    .dino-container {
+        overflow: hidden;
+        height: 180px; 
+        margin-top: 20px;
+        border: 1px solid #ff4b4b;
+        background: black;
+    }
+    .dino-container iframe {
+        margin-top: -100px; /* Скрывает заголовок игры */
+        filter: invert(1) hue-rotate(180deg) contrast(1.5);
+    }
+
+    .metric-card { background: rgba(0, 0, 0, 0.9); border: 1px solid #00ffcc; padding: 15px; text-align: center; min-height: 110px; }
+    .error-card { background: rgba(0, 0, 0, 0.9); border: 1px solid #ff4b4b; padding: 25px; text-align: center; }
     h1, h2, h3, span, label, p { color: #00ffcc !important; }
-    [data-testid="stSidebar"] { background-color: rgba(10, 14, 20, 0.9) !important; }
+    [data-testid="stSidebar"] { background-color: rgba(10, 14, 20, 0.95) !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -80,13 +85,11 @@ assets, rates = get_data_engine(m_sel)
 st.title("🚀 ABI ANALITIC")
 
 if not assets:
-    # --- ИСПРАВЛЕННЫЙ БЛОК: ТОЛЬКО ДИНО (БЕЗ ТЕКСТА) ---
+    # --- ТОЛЬКО ДИНОЗАВРИК (БЕЗ НАДПИСЕЙ) ---
+    st.markdown(f"<div class='error-card'><h1>⚠️ {m_sel} НЕДОСТУПЕН</h1>", unsafe_allow_html=True)
     st.markdown("""
-        <div class='error-card'>
-            <h1>⚠️ РЕГИОН ВРЕМЕННО НЕДОСТУПЕН</h1>
-            <div style="overflow:hidden; height:200px; margin-top:20px;">
-                <iframe src="https://chromedino.com/" frameborder="0" scrolling="no" width="100%" height="300" style="border:none; filter: invert(1) contrast(1.2); margin-top: -60px;"></iframe>
-            </div>
+        <div class="dino-container">
+            <iframe src="https://chromedino.com/" frameborder="0" scrolling="no" width="100%" height="400"></iframe>
         </div>
     """, unsafe_allow_html=True)
 else:
@@ -104,6 +107,7 @@ else:
     t_name = st.selectbox("ВЫБЕРИ ДЛЯ АНАЛИЗА:", df_top["T"].tolist())
     item = next(x for x in assets if x['T'] == t_name)
 
+    # Прогноз
     if "f_usd" not in st.session_state or st.session_state.get("last_t") != t_name:
         mu, sigma = item['AVG'], item['STD'] if item['STD'] > 0 else 0.015
         st.session_state.f_usd = [item['P_USD'] * (1 + np.random.normal(mu, sigma)) for _ in range(7)]
@@ -113,7 +117,7 @@ else:
     f_prices = [p * r_target for p in st.session_state.f_usd]
     final_profit_pct = ((f_prices[-1] / p_now) - 1) * 100
 
-    # КАРТОЧКИ (ПРОЦЕНТЫ ФИКСИРОВАНЫ)
+    # КАРТОЧКИ (ФИКС ПРОЦЕНТОВ)
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"<div class='metric-card'>ТЕКУЩАЯ<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='metric-card'>ЦЕЛЬ (7д)<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
