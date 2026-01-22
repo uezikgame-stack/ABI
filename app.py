@@ -25,24 +25,42 @@ DB = {
 }
 
 @st.cache_data(ttl=600)
-def get_data_v11(m_name):
+def get_full_data(m_name):
     try:
         tickers = DB[m_name]
         data = yf.download(tickers, period="1mo", interval="1d", group_by='ticker', progress=False)
+        # Получаем актуальные курсы
         rates_df = yf.download(["RUB=X", "KZT=X", "EURUSD=X"], period="1d", progress=False)['Close']
-        r_map = {"₽": float(rates_df["RUB=X"].iloc[-1]), "$": 1.0, "₸": float(rates_df["KZT=X"].iloc[-1]), "EUR": float(rates_df["EURUSD=X"].iloc[-1])}
+        r_map = {
+            "₽": float(rates_df["RUB=X"].iloc[-1]),
+            "$": 1.0,
+            "₸": float(rates_df["KZT=X"].iloc[-1]),
+            "EUR": float(rates_df["EURUSD=X"].iloc[-1])
+        }
         
         clean = []
         for t in tickers:
             try:
                 df = data[t].dropna()
                 if df.empty: continue
+                # Определяем базовую валюту тикера
                 if any(x in t for x in [".ME", "YNDX"]): b = "₽"
                 elif any(x in t for x in [".KZ", "KCZ"]): b = "₸"
                 elif any(x in t for x in [".PA", ".DE", ".MC"]): b = "EUR"
                 else: b = "$"
-                p_usd = float(df['Close'].iloc[-1]) / r_map[b] if b != "EUR" else float(df['Close'].iloc[-1]) * r_map["EUR"]
-                clean.append({"T": t, "P_USD": p_usd, "CH": (df['Close'].iloc[-1]/df['Close'].iloc[0]-1), "AVG": df['Close'].pct_change().mean(), "STD": df['Close'].pct_change().std(), "DF": df})
+                
+                # Переводим всё в USD для базы
+                curr_price = float(df['Close'].iloc[-1])
+                p_usd = curr_price / r_map[b] if b != "EUR" else curr_price * r_map["EUR"]
+                
+                clean.append({
+                    "T": t, 
+                    "P_USD": p_usd, 
+                    "CH": (df['Close'].iloc[-1]/df['Close'].iloc[0]-1),
+                    "AVG": df['Close'].pct_change().mean(),
+                    "STD": df['Close'].pct_change().std(),
+                    "DF": df
+                })
             except: continue
         return clean, r_map
     except: return None, None
@@ -53,7 +71,7 @@ m_sel = st.sidebar.selectbox("MARKET", list(DB.keys()))
 c_sel = st.sidebar.radio("CURRENCY", ["USD ($)", "RUB (₽)", "KZT (₸)"])
 cap_val = st.sidebar.number_input("CAPITAL", value=1000)
 
-assets, rates = get_data_v11(m_sel)
+assets, rates = get_full_data(m_sel)
 st.title("🚀 ABI ANALITIC")
 
 if assets is None or len(assets) == 0:
@@ -62,12 +80,14 @@ else:
     sign = c_sel.split("(")[1][0]
     r_target = rates[sign]
 
-    # ТОП 15
+    # --- ФИКС ВЕРХНЕЙ ТАБЛИЦЫ ---
     df_top = pd.DataFrame(assets)
-    df_top["PRICE"] = (df_top["P_USD"] * r_target).round(2)
+    # Теперь PRICE в ТОП-15 всегда умножается на выбранный курс r_target
+    df_top["PRICE"] = (df_top["P_USD"] * r_target).apply(lambda x: f"{x:,.2f} {sign}")
     df_top = df_top.sort_values(by="CH", ascending=False).head(15).reset_index(drop=True)
     df_top.index += 1
-    st.subheader("ТОП 15 АКТИВОВ")
+    
+    st.subheader(f"ТОП 15 АКТИВОВ ({sign})")
     st.dataframe(df_top[["T", "PRICE"]], use_container_width=True, height=455)
 
     t_name = st.selectbox("ВЫБЕРИ ДЛЯ АНАЛИЗА:", df_top["T"].tolist())
@@ -78,24 +98,20 @@ else:
         st.session_state.f_usd = [item['P_USD'] * (1 + np.random.normal(mu, sigma)) for _ in range(7)]
         st.session_state.last_t = t_name
 
-    # --- МАТЕМАТИКА (ДЕНЬГИ + ПРОЦЕНТЫ) ---
+    # --- РАСЧЕТ ПРОФИТА (ДЕНЬГИ + %) ---
     p_now = item['P_USD'] * r_target
     f_prices = [p * r_target for p in st.session_state.f_usd]
-    
-    # Проценты для таблицы
     f_percents = [((p_fut / p_now) - 1) * 100 for p_fut in f_prices]
-    # Деньги для главной карточки
     cash_profit = ((f_prices[-1] / p_now) - 1) * cap_val
 
     # КАРТОЧКИ
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"<div class='metric-card'>ТЕКУЩАЯ<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='metric-card'>ЦЕЛЬ (7д)<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
-    
     style = "error-card" if cash_profit < 0 else "metric-card"
     c3.markdown(f"<div class='{style}'>ПРОФИТ ({sign})<br><h3>{cash_profit:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
 
-    # ГРАФИК И ТАБЛИЦА
+    # ГРАФИК И ТАБЛИЦА ПРОГНОЗА
     st.divider()
     col_g, col_t = st.columns([2, 1])
     with col_g:
@@ -106,9 +122,8 @@ else:
         table_df = pd.DataFrame({
             "ДЕНЬ": [f"День {i+1}" for i in range(7)],
             "ЦЕНА": [f"{p:,.2f} {sign}" for p in f_prices],
-            "ПРОФИТ (%)": [f"{pr:+.2f} %" for pr in f_percents] # Здесь теперь ПРОЦЕНТЫ
+            "ПРОФИТ (%)": [f"{pr:+.2f} %" for pr in f_percents]
         })
-        st.write(f"### ПРОГНОЗ 7 ДНЕЙ")
         st.dataframe(table_df, hide_index=True, use_container_width=True)
 
     sig = "ПРОДАВАТЬ" if cash_profit < 0 else "ПОКУПАТЬ"
