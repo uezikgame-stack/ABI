@@ -11,10 +11,11 @@ st.markdown("""
     .metric-card { background: rgba(0, 0, 0, 0.9); border: 1px solid #00ffcc; padding: 15px; text-align: center; min-height: 110px; }
     .error-card { background: rgba(255, 75, 75, 0.2); border: 1px solid #ff4b4b; padding: 15px; text-align: center; min-height: 110px; }
     h1, h2, h3, span, label, p { color: #00ffcc !important; }
+    [data-testid="stSidebar"] { background-color: #0a0e14 !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. ВСЕ РЕГИОНЫ ---
+# --- 2. РЫНКИ ---
 DB = {
     "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ", "ASBN.KZ", "BAST.KZ", "KMCP.KZ", "KASE.KZ", "KZIP.KZ", "KZMZ.KZ"],
     "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA", "MBG.DE", "DHL.DE", "SAN.MC", "ALV.DE", "CS.PA", "BBVA.MC", "OR.PA"],
@@ -25,41 +26,29 @@ DB = {
 }
 
 @st.cache_data(ttl=600)
-def get_full_data(m_name):
+def get_data_engine(m_name):
     try:
         tickers = DB[m_name]
         data = yf.download(tickers, period="1mo", interval="1d", group_by='ticker', progress=False)
-        # Получаем актуальные курсы
         rates_df = yf.download(["RUB=X", "KZT=X", "EURUSD=X"], period="1d", progress=False)['Close']
-        r_map = {
-            "₽": float(rates_df["RUB=X"].iloc[-1]),
-            "$": 1.0,
-            "₸": float(rates_df["KZT=X"].iloc[-1]),
-            "EUR": float(rates_df["EURUSD=X"].iloc[-1])
-        }
+        r_map = {"₽": float(rates_df["RUB=X"].iloc[-1]), "$": 1.0, "₸": float(rates_df["KZT=X"].iloc[-1]), "EUR": float(rates_df["EURUSD=X"].iloc[-1])}
         
         clean = []
         for t in tickers:
             try:
                 df = data[t].dropna()
                 if df.empty: continue
-                # Определяем базовую валюту тикера
                 if any(x in t for x in [".ME", "YNDX"]): b = "₽"
                 elif any(x in t for x in [".KZ", "KCZ"]): b = "₸"
                 elif any(x in t for x in [".PA", ".DE", ".MC"]): b = "EUR"
                 else: b = "$"
                 
-                # Переводим всё в USD для базы
-                curr_price = float(df['Close'].iloc[-1])
-                p_usd = curr_price / r_map[b] if b != "EUR" else curr_price * r_map["EUR"]
+                curr_p = float(df['Close'].iloc[-1])
+                p_usd = curr_p / r_map[b] if b != "EUR" else curr_p * r_map["EUR"]
                 
                 clean.append({
-                    "T": t, 
-                    "P_USD": p_usd, 
-                    "CH": (df['Close'].iloc[-1]/df['Close'].iloc[0]-1),
-                    "AVG": df['Close'].pct_change().mean(),
-                    "STD": df['Close'].pct_change().std(),
-                    "DF": df
+                    "T": t, "P_USD": p_usd, "CH": (df['Close'].iloc[-1]/df['Close'].iloc[0]-1),
+                    "AVG": df['Close'].pct_change().mean(), "STD": df['Close'].pct_change().std(), "DF": df
                 })
             except: continue
         return clean, r_map
@@ -71,25 +60,26 @@ m_sel = st.sidebar.selectbox("MARKET", list(DB.keys()))
 c_sel = st.sidebar.radio("CURRENCY", ["USD ($)", "RUB (₽)", "KZT (₸)"])
 cap_val = st.sidebar.number_input("CAPITAL", value=1000)
 
-assets, rates = get_full_data(m_sel)
+assets, rates = get_data_engine(m_sel)
 st.title("🚀 ABI ANALITIC")
 
-if assets is None or len(assets) == 0:
+if not assets:
     st.markdown("<div class='error-card'><h1>⚠️ РЕГИОН ВРЕМЕННО НЕДОСТУПЕН</h1></div>", unsafe_allow_html=True)
 else:
     sign = c_sel.split("(")[1][0]
     r_target = rates[sign]
 
-    # --- ФИКС ВЕРХНЕЙ ТАБЛИЦЫ ---
+    # --- ИСПРАВЛЕННЫЙ ТОП-15 (СИНХРОНИЗАЦИЯ ЦЕН) ---
     df_top = pd.DataFrame(assets)
-    # Теперь PRICE в ТОП-15 всегда умножается на выбранный курс r_target
-    df_top["PRICE"] = (df_top["P_USD"] * r_target).apply(lambda x: f"{x:,.2f} {sign}")
+    df_top["PRICE_VAL"] = df_top["P_USD"] * r_target
+    df_top["PRICE"] = df_top["PRICE_VAL"].apply(lambda x: f"{x:,.2f} {sign}")
     df_top = df_top.sort_values(by="CH", ascending=False).head(15).reset_index(drop=True)
     df_top.index += 1
     
     st.subheader(f"ТОП 15 АКТИВОВ ({sign})")
-    st.dataframe(df_top[["T", "PRICE"]], use_container_width=True, height=455)
+    st.dataframe(df_top[["T", "PRICE"]], use_container_width=True, height=450)
 
+    # ВЫБОР АКТИВА
     t_name = st.selectbox("ВЫБЕРИ ДЛЯ АНАЛИЗА:", df_top["T"].tolist())
     item = next(x for x in assets if x['T'] == t_name)
 
@@ -98,7 +88,7 @@ else:
         st.session_state.f_usd = [item['P_USD'] * (1 + np.random.normal(mu, sigma)) for _ in range(7)]
         st.session_state.last_t = t_name
 
-    # --- РАСЧЕТ ПРОФИТА (ДЕНЬГИ + %) ---
+    # --- МАТЕМАТИКА (СИГНАЛЫ И ПРОФИТ) ---
     p_now = item['P_USD'] * r_target
     f_prices = [p * r_target for p in st.session_state.f_usd]
     f_percents = [((p_fut / p_now) - 1) * 100 for p_fut in f_prices]
@@ -108,10 +98,11 @@ else:
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"<div class='metric-card'>ТЕКУЩАЯ<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='metric-card'>ЦЕЛЬ (7д)<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
+    
     style = "error-card" if cash_profit < 0 else "metric-card"
     c3.markdown(f"<div class='{style}'>ПРОФИТ ({sign})<br><h3>{cash_profit:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
 
-    # ГРАФИК И ТАБЛИЦА ПРОГНОЗА
+    # ПРОГНОЗ
     st.divider()
     col_g, col_t = st.columns([2, 1])
     with col_g:
@@ -124,6 +115,7 @@ else:
             "ЦЕНА": [f"{p:,.2f} {sign}" for p in f_prices],
             "ПРОФИТ (%)": [f"{pr:+.2f} %" for pr in f_percents]
         })
+        st.write(f"### ПРОГНОЗ В {sign}")
         st.dataframe(table_df, hide_index=True, use_container_width=True)
 
     sig = "ПРОДАВАТЬ" if cash_profit < 0 else "ПОКУПАТЬ"
