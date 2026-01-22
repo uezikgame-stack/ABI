@@ -14,17 +14,16 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. РЫНКИ ---
+# --- 2. ДАННЫЕ ---
 DB = {
     "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ", "ASBN.KZ", "BAST.KZ", "KMCP.KZ", "KASE.KZ", "KZIP.KZ", "KZMZ.KZ"],
     "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA", "MBG.DE", "DHL.DE", "SAN.MC", "ALV.DE", "CS.PA", "BBVA.MC", "OR.PA"],
     "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL", "META", "INTC", "ADBE", "CRM", "AVGO", "QCOM", "PYPL"],
-    "RF (Россия)": ["SBER.ME", "GAZP.ME", "LKOH.ME", "YNDX", "ROSN.ME", "MGNT.ME", "NVTK.ME", "GMKN.ME", "CHMF.ME", "PLZL.ME", "TATN.ME", "MTSS.ME", "ALRS.ME", "AFLT.ME", "MAGN.ME"],
-    "CRYPTO": ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "DOT-USD", "MATIC-USD", "LTC-USD", "SHIB-USD", "TRX-USD", "AVAX-USD", "UNI-USD", "LINK-USD"]
+    "CRYPTO": ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "DOT-USD"]
 }
 
 @st.cache_data(ttl=600)
-def get_data_engine(m_name):
+def load_data(m_name):
     try:
         tickers = DB[m_name]
         data = yf.download(tickers, period="1mo", interval="1d", group_by='ticker', progress=False)
@@ -50,15 +49,14 @@ def get_data_engine(m_name):
 st.sidebar.title("ABI SETTINGS")
 m_sel = st.sidebar.selectbox("MARKET", list(DB.keys()))
 c_sel = st.sidebar.radio("CURRENCY", ["USD ($)", "RUB (₽)", "KZT (₸)"])
-cap_val = st.sidebar.number_input("CAPITAL", value=1000)
 
-assets, rates = get_data_engine(m_sel)
+assets, rates = load_data(m_sel)
 st.title("🚀 ABI ANALITIC")
 
 if not assets:
     st.markdown("<div class='error-card'><h1>⚠️ РЕГИОН ВРЕМЕННО НЕДОСТУПЕН</h1></div>", unsafe_allow_html=True)
 else:
-    sign = c_sel.split("(")[1][0] # Достаем знак ($, ₽ или ₸)
+    sign = c_sel.split("(")[1][0]
     r_target = rates[sign]
 
     # ТОП 15
@@ -80,17 +78,17 @@ else:
     # РАСЧЕТЫ
     p_now = item['P_USD'] * r_target
     f_prices = [p * r_target for p in st.session_state.f_usd]
-    f_percents = [((p_fut / p_now) - 1) * 100 for p_fut in f_prices]
-    cash_profit = ((f_prices[-1] / p_now) - 1) * cap_val
+    # Считаем итоговый профит в процентах
+    final_profit_pct = ((f_prices[-1] / p_now) - 1) * 100
 
-    # --- КАРТОЧКИ (С ИСПРАВЛЕННЫМ СИМВОЛОМ) ---
+    # --- КАРТОЧКИ (ТЕПЕРЬ ТУТ ПРОЦЕНТЫ!) ---
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"<div class='metric-card'>ТЕКУЩАЯ<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='metric-card'>ЦЕЛЬ (7д)<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     
-    style = "error-card" if cash_profit < 0 else "metric-card"
-    # ТУТ ИСПРАВЛЕНО: Заголовок и знак валюты теперь берутся из переменной sign
-    c3.markdown(f"<div class='{style}'>ПРОФИТ ({sign})<br><h3>{cash_profit:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
+    style = "error-card" if final_profit_pct < 0 else "metric-card"
+    # ВОТ ЗДЕСЬ ИСПРАВЛЕНА СИНЯЯ ОБЛАСТЬ: Теперь выводится значок %
+    c3.markdown(f"<div class='{style}'>ПРОФИТ (%)<br><h3>{final_profit_pct:+.2f} %</h3></div>", unsafe_allow_html=True)
 
     # ГРАФИК И ТАБЛИЦА
     st.divider()
@@ -103,10 +101,10 @@ else:
         table_df = pd.DataFrame({
             "ДЕНЬ": [f"День {i+1}" for i in range(7)],
             "ЦЕНА": [f"{p:,.2f} {sign}" for p in f_prices],
-            "ПРОФИТ (%)": [f"{pr:+.2f} %" for pr in f_percents]
+            "ПРОФИТ (%)": [f"{((p/p_now)-1)*100:+.2f} %" for p in f_prices]
         })
         st.write(f"### ПРОГНОЗ В {sign}")
         st.dataframe(table_df, hide_index=True, use_container_width=True)
 
-    sig = "ПРОДАВАТЬ" if cash_profit < 0 else "ПОКУПАТЬ"
-    st.markdown(f"<h2 style='text-align:center; color:{'#ff4b4b' if cash_profit < 0 else '#00ffcc'} !important; border: 2px solid;'>СИГНАЛ: {sig}</h2>", unsafe_allow_html=True)
+    sig = "ПРОДАВАТЬ" if final_profit_pct < 0 else "ПОКУПАТЬ"
+    st.markdown(f"<h2 style='text-align:center; color:{'#ff4b4b' if final_profit_pct < 0 else '#00ffcc'} !important; border: 2px solid;'>СИГНАЛ: {sig}</h2>", unsafe_allow_html=True)
