@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# --- 1. ИНТЕРФЕЙС И СТИЛЬ ---
+# --- 1. ИНТЕРФЕЙС ---
 st.set_page_config(page_title="ABI ANALITIC", layout="wide")
 st.markdown("""
     <style>
@@ -14,7 +14,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. РЕГИОНЫ ---
+# --- 2. ВСЕ РЕГИОНЫ ---
 DB = {
     "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ", "ASBN.KZ", "BAST.KZ", "KMCP.KZ", "KASE.KZ", "KZIP.KZ", "KZMZ.KZ"],
     "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA", "MBG.DE", "DHL.DE", "SAN.MC", "ALV.DE", "CS.PA", "BBVA.MC", "OR.PA"],
@@ -25,7 +25,7 @@ DB = {
 }
 
 @st.cache_data(ttl=600)
-def get_data_engine(m_name):
+def get_data_v11(m_name):
     try:
         tickers = DB[m_name]
         data = yf.download(tickers, period="1mo", interval="1d", group_by='ticker', progress=False)
@@ -53,12 +53,11 @@ m_sel = st.sidebar.selectbox("MARKET", list(DB.keys()))
 c_sel = st.sidebar.radio("CURRENCY", ["USD ($)", "RUB (₽)", "KZT (₸)"])
 cap_val = st.sidebar.number_input("CAPITAL", value=1000)
 
-assets, rates = get_data_engine(m_sel)
+assets, rates = get_data_v11(m_sel)
 st.title("🚀 ABI ANALITIC")
 
-# --- ОБРАБОТКА ОШИБОК ---
 if assets is None or len(assets) == 0:
-    st.markdown("<div class='error-card'><h1>⚠️ РЕГИОН ВРЕМЕННО НЕДОСТУПЕН</h1><p>Проверьте подключение или смените рынок</p></div>", unsafe_allow_html=True)
+    st.markdown("<div class='error-card'><h1>⚠️ РЕГИОН ВРЕМЕННО НЕДОСТУПЕН</h1></div>", unsafe_allow_html=True)
 else:
     sign = c_sel.split("(")[1][0]
     r_target = rates[sign]
@@ -79,20 +78,22 @@ else:
         st.session_state.f_usd = [item['P_USD'] * (1 + np.random.normal(mu, sigma)) for _ in range(7)]
         st.session_state.last_t = t_name
 
-    # --- ЖЕЛЕЗНЫЙ РАСЧЕТ ПРОФИТА ---
+    # --- МАТЕМАТИКА (ДЕНЬГИ + ПРОЦЕНТЫ) ---
     p_now = item['P_USD'] * r_target
     f_prices = [p * r_target for p in st.session_state.f_usd]
-    # Считаем профит как процент от вложенного КАПИТАЛА
-    f_profits = [((p_fut / p_now) - 1) * cap_val for p_fut in f_prices]
+    
+    # Проценты для таблицы
+    f_percents = [((p_fut / p_now) - 1) * 100 for p_fut in f_prices]
+    # Деньги для главной карточки
+    cash_profit = ((f_prices[-1] / p_now) - 1) * cap_val
 
     # КАРТОЧКИ
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"<div class='metric-card'>ТЕКУЩАЯ<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='metric-card'>ЦЕЛЬ (7д)<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     
-    p_fin = f_profits[-1]
-    style = "error-card" if p_fin < 0 else "metric-card"
-    c3.markdown(f"<div class='{style}'>ПРОФИТ ({sign})<br><h3>{p_fin:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
+    style = "error-card" if cash_profit < 0 else "metric-card"
+    c3.markdown(f"<div class='{style}'>ПРОФИТ ({sign})<br><h3>{cash_profit:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
 
     # ГРАФИК И ТАБЛИЦА
     st.divider()
@@ -105,10 +106,10 @@ else:
         table_df = pd.DataFrame({
             "ДЕНЬ": [f"День {i+1}" for i in range(7)],
             "ЦЕНА": [f"{p:,.2f} {sign}" for p in f_prices],
-            "ПРОФИТ": [f"{pr:,.2f} {sign}" for pr in f_profits]
+            "ПРОФИТ (%)": [f"{pr:+.2f} %" for pr in f_percents] # Здесь теперь ПРОЦЕНТЫ
         })
-        st.write(f"### ПРОГНОЗ В {sign}")
+        st.write(f"### ПРОГНОЗ 7 ДНЕЙ")
         st.dataframe(table_df, hide_index=True, use_container_width=True)
 
-    sig = "ПРОДАВАТЬ" if p_fin < 0 else "ПОКУПАТЬ"
-    st.markdown(f"<h2 style='text-align:center; color:{'#ff4b4b' if p_fin < 0 else '#00ffcc'} !important; border: 2px solid;'>СИГНАЛ: {sig}</h2>", unsafe_allow_html=True)
+    sig = "ПРОДАВАТЬ" if cash_profit < 0 else "ПОКУПАТЬ"
+    st.markdown(f"<h2 style='text-align:center; color:{'#ff4b4b' if cash_profit < 0 else '#00ffcc'} !important; border: 2px solid;'>СИГНАЛ: {sig}</h2>", unsafe_allow_html=True)
