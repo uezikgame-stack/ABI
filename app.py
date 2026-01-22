@@ -3,11 +3,25 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# --- 1. НАСТРОЙКИ СТИЛЯ ---
+# --- 1. СТИЛЬ (КИБЕРПАНК + ФОН) ---
 st.set_page_config(page_title="ABI ANALITIC", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #020508 !important; color: #00ffcc; }
+    .unified-card {
+        background: rgba(0, 0, 0, 0.95); border: 2px solid #ff4b4b; border-radius: 15px;
+        padding: 30px; text-align: center; box-shadow: 0 0 25px rgba(255, 75, 75, 0.3);
+    }
+    /* Тот самый контейнер для динозавра со скринов */
+    .dino-container {
+        overflow: hidden; height: 250px; width: 100%;
+        margin-top: 20px; border-radius: 10px; position: relative; background: #000;
+        border: 1px solid #ff4b4b;
+    }
+    .dino-container iframe {
+        position: absolute; top: -100px; left: 0; width: 100%; height: 450px;
+        filter: invert(1) hue-rotate(180deg) contrast(1.2);
+    }
     .metric-card { background: rgba(0, 0, 0, 0.9); border: 1px solid #00ffcc; padding: 15px; text-align: center; border-radius: 10px; }
     h1, h2, h3, span, label, p { color: #00ffcc !important; }
     [data-testid="stSidebar"] { background-color: rgba(10, 14, 20, 0.95) !important; }
@@ -21,18 +35,20 @@ LANG = {
         "price": "ЦЕНА", "pred": "ПРОГНОЗ %", "sel": "ВЫБЕРИ ДЛЯ АНАЛИЗА:",
         "now": "ТЕКУЩАЯ", "target": "ЦЕЛЬ (7д)", "profit": "ПРОФИТ (%)",
         "chart": "ГРАФИК ПРОГНОЗА", "days": "РАЗБОР ПО ДНЯМ", "day_label": "День",
-        "buy": "ПОКУПАТЬ", "sell": "ПРОДАВАТЬ", "hold": "УДЕРЖИВАТЬ", "signal": "СИГНАЛ"
+        "buy": "ПОКУПАТЬ", "sell": "ПРОДАВАТЬ", "hold": "УДЕРЖИВАТЬ", "signal": "СИГНАЛ",
+        "err": "РЕГИОН ВРЕМЕННО НЕДОСТУПЕН", "dino_msg": "Пока данные грузятся, побей рекорд!"
     },
     "EN": {
         "market": "MARKET", "curr": "CURRENCY", "lang": "LANGUAGE", "top": "🔥 TOP ASSETS",
         "price": "PRICE", "pred": "FORECAST %", "sel": "SELECT FOR ANALYSIS:",
         "now": "CURRENT", "target": "TARGET (7d)", "profit": "PROFIT (%)",
         "chart": "FORECAST CHART", "days": "DAILY BREAKDOWN", "day_label": "Day",
-        "buy": "BUY", "sell": "SELL", "hold": "HOLD", "signal": "SIGNAL"
+        "buy": "BUY", "sell": "SELL", "hold": "HOLD", "signal": "SIGNAL",
+        "err": "REGION TEMPORARILY UNAVAILABLE", "dino_msg": "Beat the record while data is loading!"
     }
 }
 
-# --- 3. БИБЛИОТЕКА (15 ТИКЕРОВ) ---
+# --- 3. БИБЛИОТЕКА ---
 DB = {
     "CHINA (Китай)": ["BABA", "TCEHY", "PDD", "JD", "BIDU", "NIO", "LI", "BYDDY", "BILI", "NTES", "GDS", "ZLAB", "KC", "IQ", "TME"],
     "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL", "META", "INTC", "CRM", "AVGO", "QCOM", "PYPL", "TSM"],
@@ -73,7 +89,18 @@ c_sel = st.sidebar.radio(T["curr"], ["USD ($)", "RUB (₽)", "KZT (₸)"])
 assets, rates = load_data(m_sel)
 st.title("🚀 ABI ANALITIC")
 
-if assets:
+if not assets:
+    # --- ВЕРНУЛ ДИНОЗАВРИКА ТУТ ---
+    st.markdown(f"""
+        <div class="unified-card">
+            <h1 style="color:#ff4b4b !important;">⚠️ {T['err']}</h1>
+            <p>{T['dino_msg']}</p>
+            <div class="dino-container">
+                <iframe src="https://chromedino.com/" frameborder="0" scrolling="no"></iframe>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+else:
     sign = c_sel.split("(")[1][0]
     r_target = rates[sign]
 
@@ -109,7 +136,7 @@ if assets:
     p_color = "#ff4b4b" if profit_pct < -0.7 else ("#00ffcc" if profit_pct > 0.7 else "#ffcc00")
     c3.markdown(f"<div class='metric-card' style='border: 1px solid {p_color};'>{T['profit']}<br><h3>{profit_pct:+.2f} %</h3></div>", unsafe_allow_html=True)
 
-    # ГРАФИК + РАЗБОР
+    # ГРАФИК + РАЗБОР ПО ДНЯМ
     col_graph, col_table = st.columns([2, 1])
     with col_graph:
         st.write(f"### {T['chart']}")
