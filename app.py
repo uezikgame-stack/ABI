@@ -3,16 +3,30 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# --- 1. СТИЛЬ (КИБЕРПАНК + ФОН) ---
+# --- 1. СТИЛЬ (КИБЕРПАНК + ДВИЖУЩИЙСЯ ФОН) ---
 st.set_page_config(page_title="ABI ANALITIC", layout="wide")
 st.markdown("""
     <style>
-    .stApp { background-color: #020508 !important; color: #00ffcc; }
+    .stApp {
+        background-color: #020508 !important;
+        /* ФОН С ЛИНИЯМИ */
+        background-image: 
+            linear-gradient(rgba(0, 255, 204, 0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0, 255, 204, 0.1) 1px, transparent 1px);
+        background-size: 60px 60px;
+        /* АНИМАЦИЯ ДВИЖЕНИЯ ЛИНИЙ */
+        animation: moveGrid 20s linear infinite;
+        color: #00ffcc;
+    }
+    @keyframes moveGrid {
+        from { background-position: 0 0; }
+        to { background-position: 60px 60px; }
+    }
+
     .unified-card {
         background: rgba(0, 0, 0, 0.95); border: 2px solid #ff4b4b; border-radius: 15px;
         padding: 30px; text-align: center; box-shadow: 0 0 25px rgba(255, 75, 75, 0.3);
     }
-    /* Тот самый контейнер для динозавра со скринов */
     .dino-container {
         overflow: hidden; height: 250px; width: 100%;
         margin-top: 20px; border-radius: 10px; position: relative; background: #000;
@@ -90,7 +104,6 @@ assets, rates = load_data(m_sel)
 st.title("🚀 ABI ANALITIC")
 
 if not assets:
-    # --- ВЕРНУЛ ДИНОЗАВРИКА ТУТ ---
     st.markdown(f"""
         <div class="unified-card">
             <h1 style="color:#ff4b4b !important;">⚠️ {T['err']}</h1>
@@ -104,7 +117,6 @@ else:
     sign = c_sel.split("(")[1][0]
     r_target = rates[sign]
 
-    # ТОП 15
     st.write(f"## {T['top']}")
     df_top = pd.DataFrame(assets)
     df_top["PROFIT_EST"] = ((df_top["F_USD"] / df_top["P_USD"]) - 1) * 100
@@ -120,7 +132,6 @@ else:
     t_name = st.selectbox(T["sel"], df_top["T"].tolist())
     item = next(x for x in assets if x['T'] == t_name)
 
-    # Прогноз
     if "f_usd" not in st.session_state or st.session_state.get("last_t") != t_name:
         st.session_state.f_usd = [item['P_USD'] * (1 + np.random.normal(item['AVG'], item['STD'])) for _ in range(7)]
         st.session_state.last_t = t_name
@@ -129,14 +140,12 @@ else:
     f_prices = [p * r_target for p in st.session_state.f_usd]
     profit_pct = ((f_prices[-1] / p_now) - 1) * 100
 
-    # МЕТРИКИ
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"<div class='metric-card'>{T['now']}<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='metric-card'>{T['target']}<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     p_color = "#ff4b4b" if profit_pct < -0.7 else ("#00ffcc" if profit_pct > 0.7 else "#ffcc00")
     c3.markdown(f"<div class='metric-card' style='border: 1px solid {p_color};'>{T['profit']}<br><h3>{profit_pct:+.2f} %</h3></div>", unsafe_allow_html=True)
 
-    # ГРАФИК + РАЗБОР ПО ДНЯМ
     col_graph, col_table = st.columns([2, 1])
     with col_graph:
         st.write(f"### {T['chart']}")
@@ -151,7 +160,6 @@ else:
         })
         st.dataframe(forecast_df, hide_index=True, use_container_width=True)
 
-    # СИГНАЛ
     sig_key = "buy" if profit_pct > 0.7 else ("sell" if profit_pct < -0.7 else "hold")
     sig_c = "#00ffcc" if sig_key == "buy" else ("#ff4b4b" if sig_key == "sell" else "#ffcc00")
     st.markdown(f"<h2 style='text-align:center; color:{sig_c} !important; border: 2px solid {sig_c}; padding: 15px; border-radius: 10px;'>{T['signal']}: {T[sig_key]}</h2>", unsafe_allow_html=True)
