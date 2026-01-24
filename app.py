@@ -9,20 +9,14 @@ st.markdown("""
     <style>
     .stApp {
         background-color: #020508 !important;
-        /* ФОН С ЛИНИЯМИ */
         background-image: 
             linear-gradient(rgba(0, 255, 204, 0.1) 1px, transparent 1px),
             linear-gradient(90deg, rgba(0, 255, 204, 0.1) 1px, transparent 1px);
         background-size: 60px 60px;
-        /* АНИМАЦИЯ ДВИЖЕНИЯ ЛИНИЙ */
         animation: moveGrid 20s linear infinite;
         color: #00ffcc;
     }
-    @keyframes moveGrid {
-        from { background-position: 0 0; }
-        to { background-position: 60px 60px; }
-    }
-
+    @keyframes moveGrid { from { background-position: 0 0; } to { background-position: 60px 60px; } }
     .unified-card {
         background: rgba(0, 0, 0, 0.95); border: 2px solid #ff4b4b; border-radius: 15px;
         padding: 30px; text-align: center; box-shadow: 0 0 25px rgba(255, 75, 75, 0.3);
@@ -87,6 +81,7 @@ def load_data(m_name):
                 b = "₽" if ".ME" in t or t == "YNDX" else ("₸" if ".KZ" in t or "KCZ" in t else "$")
                 p_usd = float(df['Close'].iloc[-1]) / r_map[b]
                 mu = df['Close'].pct_change().mean()
+                if np.isnan(mu): mu = 0.0
                 clean.append({"T": t, "P_USD": p_usd, "F_USD": p_usd*(1+mu*7), "AVG": mu, "STD": df['Close'].pct_change().std() or 0.02, "DF": df})
             except: continue
         return clean, r_map
@@ -124,8 +119,8 @@ else:
     df_top.index += 1
     
     df_show = df_top.copy()
-    df_show[T["price"]] = (df_show["P_USD"] * r_target).apply(lambda x: f"{x:,.2f} {sign}")
-    df_show[T["pred"]] = df_show["PROFIT_EST"].apply(lambda x: f"{x:+.2f}%")
+    df_show[T["price"]] = (df_show["P_USD"] * r_target).fillna(0).apply(lambda x: f"{x:,.2f} {sign}")
+    df_show[T["pred"]] = df_show["PROFIT_EST"].fillna(0).apply(lambda x: f"{x:+.2f}%")
     st.dataframe(df_show[["T", T["price"], T["pred"]]], use_container_width=True, height=550)
 
     st.divider()
@@ -138,7 +133,7 @@ else:
 
     p_now = item['P_USD'] * r_target
     f_prices = [p * r_target for p in st.session_state.f_usd]
-    profit_pct = ((f_prices[-1] / p_now) - 1) * 100
+    profit_pct = ((f_prices[-1] / p_now) - 1) * 100 if p_now != 0 else 0
 
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"<div class='metric-card'>{T['now']}<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
@@ -156,7 +151,7 @@ else:
         forecast_df = pd.DataFrame({
             T["day_label"]: [f"{T['day_label']} {i+1}" for i in range(7)],
             T["price"]: [f"{p:,.2f} {sign}" for p in f_prices],
-            " % ": [f"{((p/p_now)-1)*100:+.2f} %" for p in f_prices]
+            " % ": [f"{((p/p_now)-1)*100:+.2f} %" if p_now != 0 else "0.00 %" for p in f_prices]
         })
         st.dataframe(forecast_df, hide_index=True, use_container_width=True)
 
