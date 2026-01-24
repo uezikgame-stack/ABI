@@ -56,7 +56,7 @@ LANG = {
     }
 }
 
-# --- 3. БИБЛИОТЕКА ---
+# --- 3. БИБЛИОТЕКА (15 ТИКЕРОВ) ---
 DB = {
     "CHINA (Китай)": ["BABA", "TCEHY", "PDD", "JD", "BIDU", "NIO", "LI", "BYDDY", "BILI", "NTES", "GDS", "ZLAB", "KC", "IQ", "TME"],
     "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL", "META", "INTC", "CRM", "AVGO", "QCOM", "PYPL", "TSM"],
@@ -81,7 +81,7 @@ def load_data(m_name):
                 b = "₽" if ".ME" in t or t == "YNDX" else ("₸" if ".KZ" in t or "KCZ" in t else "$")
                 p_usd = float(df['Close'].iloc[-1]) / r_map[b]
                 mu = df['Close'].pct_change().mean()
-                if np.isnan(mu): mu = 0.0
+                if np.isnan(mu): mu = 0.0 # ФИКС NAN
                 clean.append({"T": t, "P_USD": p_usd, "F_USD": p_usd*(1+mu*7), "AVG": mu, "STD": df['Close'].pct_change().std() or 0.02, "DF": df})
             except: continue
         return clean, r_map
