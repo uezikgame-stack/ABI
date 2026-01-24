@@ -30,7 +30,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. ЯЗЫКИ И ДАННЫЕ ---
+# --- 2. ПОЛНАЯ БАЗА (15 АКТИВОВ НА РЕГИОН) ---
 LANG = {
     "RU": {
         "market": "РЫНОК", "curr": "ВАЛЮТА", "top": "🔥 ТОП АКТИВОВ", "price": "ЦЕНА", "pred": "ПРОГНОЗ %",
@@ -49,10 +49,11 @@ LANG = {
 }
 
 DB = {
-    "CHINA (Китай)": ["BABA", "TCEHY", "PDD", "JD", "BIDU", "NIO", "LI", "BYDDY"],
-    "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL", "CRM"],
-    "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ"],
-    "RF (Россия)": ["SBER.ME", "GAZP.ME", "LKOH.ME", "YNDX", "ROSN.ME"]
+    "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL", "META", "INTC", "CRM", "AVGO", "QCOM", "PYPL", "TSM"],
+    "CHINA (Китай)": ["BABA", "TCEHY", "PDD", "JD", "BIDU", "NIO", "LI", "BYDDY", "BILI", "NTES", "GDS", "ZLAB", "KC", "IQ", "TME"],
+    "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA", "MBG.DE", "DHL.DE", "ALV.DE", "SAN.MC", "BMW.DE", "OR.PA", "BBVA.MC"],
+    "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ", "ASBN.KZ", "KSPI.KZ", "KCP.KZ", "KMGP.KZ", "BCKL.KZ", "KASE.KZ"],
+    "RF (Россия)": ["SBER.ME", "GAZP.ME", "LKOH.ME", "YNDX", "ROSN.ME", "MGNT.ME", "NVTK.ME", "GMKN.ME", "CHMF.ME", "PLZL.ME", "TATN.ME", "MTSS.ME", "AFLT.ME", "ALRS.ME", "VTBR.ME"]
 }
 
 @st.cache_data(ttl=300)
@@ -60,12 +61,11 @@ def fetch_all(m_name):
     try:
         tickers = DB[m_name]
         data = yf.download(tickers, period="1mo", interval="1d", group_by='ticker', progress=False)
-        rates_raw = yf.download(["RUB=X", "KZT=X"], period="1d", progress=False)['Close']
+        rates_raw = yf.download(["RUB=X", "KZT=X", "EURUSD=X"], period="5d", progress=False)['Close']
         
-        # Безопасный маппинг курсов
         r_map = {"$": 1.0}
-        r_map["₽"] = float(rates_raw["RUB=X"].iloc[-1]) if not rates_raw["RUB=X"].empty else 90.0
-        r_map["₸"] = float(rates_raw["KZT=X"].iloc[-1]) if not rates_raw["KZT=X"].empty else 450.0
+        r_map["₽"] = float(rates_raw["RUB=X"].dropna().iloc[-1]) if not rates_raw["RUB=X"].dropna().empty else 90.0
+        r_map["₸"] = float(rates_raw["KZT=X"].dropna().iloc[-1]) if not rates_raw["KZT=X"].dropna().empty else 480.0
         
         clean = []
         for t in tickers:
@@ -73,8 +73,19 @@ def fetch_all(m_name):
                 df = data[t].dropna() if t in data else pd.DataFrame()
                 if df.empty: continue
                 
-                base = "₽" if ".ME" in t or t == "YNDX" else ("₸" if ".KZ" in t or "KCZ" in t else "$")
-                p_now_usd = float(df['Close'].iloc[-1]) / r_map[base]
+                # Определение валюты актива
+                base = "$"
+                if ".ME" in t or t == "YNDX": base = "₽"
+                elif ".KZ" in t or "KCZ" in t: base = "₸"
+                elif any(ex in t for ex in [".PA", ".DE", ".MC", ".SW"]): base = "€" # Евро
+                
+                # Если актив в Евро, переводим сначала в USD
+                current_price = float(df['Close'].iloc[-1])
+                if base == "€":
+                    eur_usd = float(rates_raw["EURUSD=X"].dropna().iloc[-1]) if "EURUSD=X" in rates_raw else 1.08
+                    p_now_usd = current_price * eur_usd
+                else:
+                    p_now_usd = current_price / r_map.get(base, 1.0)
                 
                 mu = df['Close'].pct_change().mean()
                 if np.isnan(mu) or np.isinf(mu): mu = 0.0
@@ -85,7 +96,7 @@ def fetch_all(m_name):
                 })
             except: continue
         return clean, r_map
-    except: return [], {"$": 1.0, "₽": 90.0, "₸": 450.0}
+    except: return [], {"$": 1.0, "₽": 90.0, "₸": 480.0}
 
 # --- 3. ИНТЕРФЕЙС ---
 st.sidebar.title("ABI SETTINGS")
@@ -104,7 +115,6 @@ else:
     sign = c_name.split("(")[1][0]
     r_val = rates.get(sign, 1.0)
 
-    # ТОП АКТИВОВ
     st.write(f"### {T['top']}")
     df = pd.DataFrame(assets)
     df["PROFIT_EST"] = ((df["F_USD"] / df["P_USD"].replace(0, 1)) - 1) * 100
@@ -113,14 +123,12 @@ else:
     view = df.copy()
     view[T["price"]] = (view["P_USD"] * r_val).apply(lambda x: f"{x:,.2f} {sign}")
     view[T["pred"]] = view["PROFIT_EST"].apply(lambda x: f"{x:+.2f}%")
-    st.dataframe(view[["T", T["price"], T["pred"]]], use_container_width=True, height=300)
+    st.dataframe(view[["T", T["price"], T["pred"]]], use_container_width=True, height=450)
 
-    # ДЕТАЛИЗАЦИЯ
     st.divider()
     t_sel = st.selectbox(T["sel"], df["T"].tolist())
     item = next(x for x in assets if x['T'] == t_sel)
 
-    # Фикс прогноза
     if "cache_t" not in st.session_state or st.session_state.cache_t != t_sel:
         st.session_state.f_pts = [item['P_USD'] * (1 + np.random.normal(item['AVG'], item['STD'])) for _ in range(7)]
         st.session_state.cache_t = t_sel
@@ -135,7 +143,6 @@ else:
     clr = "#00ffcc" if pct > 0.5 else ("#ff4b4b" if pct < -0.5 else "#ffcc00")
     c3.markdown(f"<div class='metric-card' style='border-color:{clr}'>{T['profit']}<br><h3>{pct:+.2f}%</h3></div>", unsafe_allow_html=True)
 
-    # ГРАФИК И ТАБЛИЦА
     cg, ct = st.columns([2, 1])
     with cg:
         st.write(f"#### {T['chart']}")
