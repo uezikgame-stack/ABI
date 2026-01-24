@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# --- 1. СТИЛЬ (ТВОЙ КИБЕРПАНК + ПЛЫВУЩИЕ ЛИНИИ) ---
+# --- 1. ОРИГИНАЛЬНЫЙ СТИЛЬ (КИБЕРПАНК) ---
 st.set_page_config(page_title="ABI ANALITIC", layout="wide")
 st.markdown("""
     <style>
@@ -19,19 +19,10 @@ st.markdown("""
     @keyframes moveGrid { from { background-position: 0 0; } to { background-position: 60px 60px; } }
     .unified-card {
         background: rgba(0, 0, 0, 0.95); border: 2px solid #ff4b4b; border-radius: 15px;
-        padding: 30px; text-align: center; box-shadow: 0 0 25px rgba(255, 75, 75, 0.3);
-    }
-    .dino-container {
-        overflow: hidden; height: 250px; width: 100%;
-        margin-top: 20px; border-radius: 10px; position: relative; background: #000;
-        border: 1px solid #ff4b4b;
-    }
-    .dino-container iframe {
-        position: absolute; top: -100px; left: 0; width: 100%; height: 450px;
-        filter: invert(1) hue-rotate(180deg) contrast(1.2);
+        padding: 30px; text-align: center;
     }
     .metric-card { background: rgba(0, 0, 0, 0.9); border: 1px solid #00ffcc; padding: 15px; text-align: center; border-radius: 10px; }
-    h1, h2, h3, span, label, p { color: #00ffcc !important; }
+    h1, h2, h3, p, span, label { color: #00ffcc !important; }
     [data-testid="stSidebar"] { background-color: rgba(10, 14, 20, 0.95) !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -39,70 +30,57 @@ st.markdown("""
 # --- 2. СЛОВАРЬ (RU/EN) ---
 LANG = {
     "RU": {
-        "market": "РЫНОК", "curr": "ВАЛЮТА", "top": "🔥 ТОП АКТИВОВ",
-        "price": "ЦЕНА", "pred": "ПРОГНОЗ %", "sel": "ВЫБЕРИ ДЛЯ АНАЛИЗА:",
-        "now": "ТЕКУЩАЯ", "target": "ЦЕЛЬ (7д)", "profit": "ПРОФИТ (%)",
-        "chart": "ГРАФИК ПРОГНОЗА", "days": "РАЗБОР ПО ДНЯМ", "day_label": "День",
-        "buy": "ПОКУПАТЬ", "sell": "ПРОДАВАТЬ", "hold": "УДЕРЖИВАТЬ", "signal": "СИГНАЛ",
-        "err": "РЕГИОН ВРЕМЕННО НЕДОСТУПЕН", "dino_msg": "Пока данные грузятся, побей рекорд!"
+        "market": "РЫНОК", "curr": "ВАЛЮТА", "top": "🔥 ТОП АКТИВОВ", "price": "ЦЕНА", "pred": "ПРОГНОЗ %",
+        "sel": "ВЫБЕРИ ДЛЯ АНАЛИЗА:", "now": "ТЕКУЩАЯ", "target": "ЦЕЛЬ (7д)", "profit": "ПРОФИТ (%)",
+        "chart": "ГРАФИК ПРОГНОЗА", "days": "РАЗБОР ПО ДНЯМ", "day_label": "День", "signal": "СИГНАЛ",
+        "buy": "ПОКУПАТЬ", "sell": "ПРОДАВАТЬ", "hold": "УДЕРЖИВАТЬ"
     },
     "EN": {
-        "market": "MARKET", "curr": "CURRENCY", "top": "🔥 TOP ASSETS",
-        "price": "PRICE", "pred": "FORECAST %", "sel": "SELECT FOR ANALYSIS:",
-        "now": "CURRENT", "target": "TARGET (7d)", "profit": "PROFIT (%)",
-        "chart": "FORECAST CHART", "days": "DAILY BREAKDOWN", "day_label": "Day",
-        "buy": "BUY", "sell": "SELL", "hold": "HOLD", "signal": "SIGNAL",
-        "err": "REGION TEMPORARILY UNAVAILABLE", "dino_msg": "Beat the record while data is loading!"
+        "market": "MARKET", "curr": "CURRENCY", "top": "🔥 TOP ASSETS", "price": "PRICE", "pred": "FORECAST %",
+        "sel": "SELECT FOR ANALYSIS:", "now": "CURRENT", "target": "TARGET (7d)", "profit": "PROFIT (%)",
+        "chart": "FORECAST CHART", "days": "DAILY BREAKDOWN", "day_label": "Day", "signal": "SIGNAL",
+        "buy": "BUY", "sell": "SELL", "hold": "HOLD"
     }
 }
 
-# --- 3. БИБЛИОТЕКА ---
+# --- 3. БАЗА ДАННЫХ ---
 DB = {
-    "CHINA (Китай)": ["BABA", "TCEHY", "PDD", "JD", "BIDU", "NIO", "LI", "BYDDY", "BILI", "NTES", "GDS", "ZLAB", "KC", "IQ", "TME"],
-    "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL", "META", "INTC", "CRM", "AVGO", "QCOM", "PYPL", "TSM"],
-    "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ", "ASBN.KZ", "KSPI.KZ", "KCP.KZ", "KMGP.KZ", "BCKL.KZ", "KASE.KZ"],
-    "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA", "MBG.DE", "DHL.DE", "ALV.DE", "SAN.MC", "BMW.DE", "OR.PA", "BBVA.MC"],
-    "RF (Россия)": ["SBER.ME", "GAZP.ME", "LKOH.ME", "YNDX", "ROSN.ME", "MGNT.ME", "NVTK.ME", "GMKN.ME", "CHMF.ME", "PLZL.ME", "TATN.ME", "MTSS.ME", "AFLT.ME", "ALRS.ME", "VTBR.ME"]
+    "CHINA": ["BABA", "TCEHY", "PDD", "JD", "BIDU", "NIO", "LI", "BYDDY"],
+    "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL", "CRM"],
+    "KAZ (Казахстан)": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ"],
+    "RF (Россия)": ["SBER.ME", "GAZP.ME", "LKOH.ME", "YNDX", "ROSN.ME"]
 }
 
 @st.cache_data(ttl=300)
 def load_data(m_name):
-    try:
-        tickers = DB[m_name]
-        data = yf.download(tickers, period="1mo", interval="1d", group_by='ticker', progress=False)
-        rates_df = yf.download(["RUB=X", "KZT=X", "CNY=X"], period="1d", progress=False)['Close']
-        
-        # Защита от пустых курсов валют
+    tickers = DB[m_name]
+    data = yf.download(tickers, period="1mo", interval="1d", group_by='ticker', progress=False)
+    rates_raw = yf.download(["RUB=X", "KZT=X"], period="1d", progress=False)['Close']
+    
+    # Расчет курсов валют
+    r_map = {"$": 1.0}
+    r_map["₽"] = float(rates_raw["RUB=X"].iloc[-1]) if not rates_raw["RUB=X"].empty else 90.0
+    r_map["₸"] = float(rates_raw["KZT=X"].iloc[-1]) if not rates_raw["KZT=X"].empty else 450.0
+    
+    clean = []
+    for t in tickers:
         try:
-            r_map = {
-                "₽": float(rates_df["RUB=X"].iloc[-1]) if not rates_df["RUB=X"].empty else 90.0,
-                "$": 1.0,
-                "₸": float(rates_df["KZT=X"].iloc[-1]) if not rates_df["KZT=X"].empty else 450.0
-            }
-        except:
-            r_map = {"₽": 90.0, "$": 1.0, "₸": 450.0}
-        
-        clean = []
-        for t in tickers:
-            try:
-                df = data[t].dropna()
-                if df.empty: continue
-                b = "₽" if ".ME" in t or t == "YNDX" else ("₸" if ".KZ" in t or "KCZ" in t else "$")
-                
-                # Фикс пустых цен
-                last_price = float(df['Close'].iloc[-1]) if not df['Close'].empty else 0.0
-                p_usd = last_price / r_map[b]
-                
-                mu = df['Close'].pct_change().mean()
-                if np.isnan(mu) or np.isinf(mu): mu = 0.0
-                
-                clean.append({
-                    "T": t, "P_USD": p_usd, "F_USD": p_usd*(1+mu*7), 
-                    "AVG": mu, "STD": df['Close'].pct_change().std() or 0.02, "DF": df
-                })
-            except: continue
-        return clean, r_map
-    except: return None, None
+            df = data[t].dropna()
+            if df.empty: continue
+            
+            # Определение базовой валюты тикера
+            base = "₽" if ".ME" in t or t == "YNDX" else ("₸" if ".KZ" in t or "KCZ" in t else "$")
+            p_usd = float(df['Close'].iloc[-1]) / r_map[base]
+            
+            mu = df['Close'].pct_change().mean()
+            if np.isnan(mu): mu = 0.0
+            
+            clean.append({
+                "T": t, "P_USD": p_usd, "F_USD": p_usd * (1 + mu * 7),
+                "AVG": mu, "STD": df['Close'].pct_change().std() or 0.02, "DF": df
+            })
+        except: continue
+    return clean, r_map
 
 # --- 4. ИНТЕРФЕЙС ---
 st.sidebar.title("ABI SETTINGS")
@@ -114,66 +92,40 @@ c_sel = st.sidebar.radio(T["curr"], ["USD ($)", "RUB (₽)", "KZT (₸)"])
 assets, rates = load_data(m_sel)
 st.title("🚀 ABI ANALITIC")
 
-if not assets:
-    st.markdown(f"""
-        <div class="unified-card">
-            <h1 style="color:#ff4b4b !important;">⚠️ {T['err']}</h1>
-            <p>{T['dino_msg']}</p>
-            <div class="dino-container">
-                <iframe src="https://chromedino.com/" frameborder="0" scrolling="no"></iframe>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-else:
+if assets:
     sign = c_sel.split("(")[1][0]
-    r_target = rates.get(sign, 1.0)
+    r_target = rates[sign]
 
-    # Таблица ТОП-15
+    # ТОП АКТИВОВ
     st.write(f"## {T['top']}")
     df_top = pd.DataFrame(assets)
-    df_top["PROFIT_EST"] = ((df_top["F_USD"] / df_top["P_USD"].replace(0, 1)) - 1) * 100
+    df_top["PROFIT_EST"] = ((df_top["F_USD"] / df_top["P_USD"]) - 1) * 100
     df_top = df_top.sort_values(by="PROFIT_EST", ascending=False).reset_index(drop=True)
-    df_top.index += 1
     
     df_show = df_top.copy()
-    df_show[T["price"]] = (df_show["P_USD"] * r_target).apply(lambda x: f"{x:,.2f} {sign}" if not np.isnan(x) else f"0.00 {sign}")
-    df_show[T["pred"]] = df_show["PROFIT_EST"].apply(lambda x: f"{x:+.2f}%" if not np.isnan(x) else "0.00%")
-    st.dataframe(df_show[["T", T["price"], T["pred"]]], use_container_width=True, height=400)
+    df_show[T["price"]] = (df_show["P_USD"] * r_target).apply(lambda x: f"{x:,.2f} {sign}")
+    df_show[T["pred"]] = df_show["PROFIT_EST"].apply(lambda x: f"{x:+.2f}%")
+    st.dataframe(df_show[["T", T["price"], T["pred"]]], use_container_width=True)
 
+    # ДЕТАЛЬНЫЙ АНАЛИЗ
     st.divider()
     t_name = st.selectbox(T["sel"], df_top["T"].tolist())
     item = next(x for x in assets if x['T'] == t_name)
 
-    # Прогноз (фикс сессии)
-    if "f_usd" not in st.session_state or st.session_state.get("last_t") != t_name:
-        st.session_state.f_usd = [item['P_USD'] * (1 + np.random.normal(item['AVG'], item['STD'])) for _ in range(7)]
-        st.session_state.last_t = t_name
-
     p_now = item['P_USD'] * r_target
-    f_prices = [p * r_target for p in st.session_state.f_usd]
-    profit_pct = ((f_prices[-1] / p_now) - 1) * 100 if p_now != 0 else 0
+    f_price = item['F_USD'] * r_target
+    profit_pct = item['PROFIT_EST']
 
-    # Метрики без NaN
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"<div class='metric-card'>{T['now']}<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='metric-card'>{T['target']}<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
-    p_color = "#ff4b4b" if profit_pct < -0.7 else ("#00ffcc" if profit_pct > 0.7 else "#ffcc00")
-    c3.markdown(f"<div class='metric-card' style='border: 1px solid {p_color};'>{T['profit']}<br><h3>{profit_pct:+.2f} %</h3></div>", unsafe_allow_html=True)
+    c2.markdown(f"<div class='metric-card'>{T['target']}<br><h3>{f_price:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
+    c3.markdown(f"<div class='metric-card'>{T['profit']}<br><h3>{profit_pct:+.2f} %</h3></div>", unsafe_allow_html=True)
 
-    col_graph, col_table = st.columns([2, 1])
-    with col_graph:
-        st.write(f"### {T['chart']}")
-        hist_vals = (item['DF']['Close'].tail(15).values * r_target / (item['P_USD'] * r_target / p_now)) if p_now != 0 else np.zeros(15)
-        st.line_chart(np.append(hist_vals, f_prices), color="#00ffcc")
-    with col_table:
-        st.write(f"### {T['days']}")
-        forecast_df = pd.DataFrame({
-            T["day_label"]: [f"{T['day_label']} {i+1}" for i in range(7)],
-            T["price"]: [f"{p:,.2f} {sign}" for p in f_prices],
-            " % ": [f"{((p/p_now)-1)*100:+.2f} %" if p_now != 0 else "0.00 %" for p in f_prices]
-        })
-        st.dataframe(forecast_df, hide_index=True, use_container_width=True)
+    # ГРАФИК
+    st.write(f"### {T['chart']}")
+    hist_vals = (item['DF']['Close'].tail(15).values * r_target / (item['P_USD'] * r_target / p_now))
+    st.line_chart(hist_vals, color="#00ffcc")
 
+    # СИГНАЛ
     sig_key = "buy" if profit_pct > 0.7 else ("sell" if profit_pct < -0.7 else "hold")
-    sig_c = "#00ffcc" if sig_key == "buy" else ("#ff4b4b" if sig_key == "sell" else "#ffcc00")
-    st.markdown(f"<h2 style='text-align:center; color:{sig_c} !important; border: 2px solid {sig_c}; padding: 15px; border-radius: 10px;'>{T['signal']}: {T[sig_key]}</h2>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='text-align:center; border: 2px solid #00ffcc; padding: 15px;'>{T['signal']}: {T[sig_key]}</h2>", unsafe_allow_html=True)
