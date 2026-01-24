@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-# --- 1. СТИЛЬ (КИБЕРПАНК + ДВИЖУЩИЙСЯ ФОН) ---
+# --- 1. СТИЛЬ (ТВОЙ КИБЕРПАНК + ПЛЫВУЩИЕ ЛИНИИ) ---
 st.set_page_config(page_title="ABI ANALITIC", layout="wide")
 st.markdown("""
     <style>
@@ -36,10 +36,10 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. СЛОВАРЬ ЯЗЫКОВ ---
+# --- 2. СЛОВАРЬ (RU/EN) ---
 LANG = {
     "RU": {
-        "market": "РЫНОК", "curr": "ВАЛЮТА", "lang": "ЯЗЫК", "top": "🔥 ТОП АКТИВОВ",
+        "market": "РЫНОК", "curr": "ВАЛЮТА", "top": "🔥 ТОП АКТИВОВ",
         "price": "ЦЕНА", "pred": "ПРОГНОЗ %", "sel": "ВЫБЕРИ ДЛЯ АНАЛИЗА:",
         "now": "ТЕКУЩАЯ", "target": "ЦЕЛЬ (7д)", "profit": "ПРОФИТ (%)",
         "chart": "ГРАФИК ПРОГНОЗА", "days": "РАЗБОР ПО ДНЯМ", "day_label": "День",
@@ -47,7 +47,7 @@ LANG = {
         "err": "РЕГИОН ВРЕМЕННО НЕДОСТУПЕН", "dino_msg": "Пока данные грузятся, побей рекорд!"
     },
     "EN": {
-        "market": "MARKET", "curr": "CURRENCY", "lang": "LANGUAGE", "top": "🔥 TOP ASSETS",
+        "market": "MARKET", "curr": "CURRENCY", "top": "🔥 TOP ASSETS",
         "price": "PRICE", "pred": "FORECAST %", "sel": "SELECT FOR ANALYSIS:",
         "now": "CURRENT", "target": "TARGET (7d)", "profit": "PROFIT (%)",
         "chart": "FORECAST CHART", "days": "DAILY BREAKDOWN", "day_label": "Day",
@@ -56,7 +56,7 @@ LANG = {
     }
 }
 
-# --- 3. БИБЛИОТЕКА (15 ТИКЕРОВ) ---
+# --- 3. БИБЛИОТЕКА ---
 DB = {
     "CHINA (Китай)": ["BABA", "TCEHY", "PDD", "JD", "BIDU", "NIO", "LI", "BYDDY", "BILI", "NTES", "GDS", "ZLAB", "KC", "IQ", "TME"],
     "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL", "META", "INTC", "CRM", "AVGO", "QCOM", "PYPL", "TSM"],
@@ -71,7 +71,16 @@ def load_data(m_name):
         tickers = DB[m_name]
         data = yf.download(tickers, period="1mo", interval="1d", group_by='ticker', progress=False)
         rates_df = yf.download(["RUB=X", "KZT=X", "CNY=X"], period="1d", progress=False)['Close']
-        r_map = {"₽": float(rates_df["RUB=X"].iloc[-1]), "$": 1.0, "₸": float(rates_df["KZT=X"].iloc[-1])}
+        
+        # Защита от пустых курсов валют
+        try:
+            r_map = {
+                "₽": float(rates_df["RUB=X"].iloc[-1]) if not rates_df["RUB=X"].empty else 90.0,
+                "$": 1.0,
+                "₸": float(rates_df["KZT=X"].iloc[-1]) if not rates_df["KZT=X"].empty else 450.0
+            }
+        except:
+            r_map = {"₽": 90.0, "$": 1.0, "₸": 450.0}
         
         clean = []
         for t in tickers:
@@ -79,10 +88,18 @@ def load_data(m_name):
                 df = data[t].dropna()
                 if df.empty: continue
                 b = "₽" if ".ME" in t or t == "YNDX" else ("₸" if ".KZ" in t or "KCZ" in t else "$")
-                p_usd = float(df['Close'].iloc[-1]) / r_map[b]
+                
+                # Фикс пустых цен
+                last_price = float(df['Close'].iloc[-1]) if not df['Close'].empty else 0.0
+                p_usd = last_price / r_map[b]
+                
                 mu = df['Close'].pct_change().mean()
-                if np.isnan(mu): mu = 0.0 # ФИКС NAN
-                clean.append({"T": t, "P_USD": p_usd, "F_USD": p_usd*(1+mu*7), "AVG": mu, "STD": df['Close'].pct_change().std() or 0.02, "DF": df})
+                if np.isnan(mu) or np.isinf(mu): mu = 0.0
+                
+                clean.append({
+                    "T": t, "P_USD": p_usd, "F_USD": p_usd*(1+mu*7), 
+                    "AVG": mu, "STD": df['Close'].pct_change().std() or 0.02, "DF": df
+                })
             except: continue
         return clean, r_map
     except: return None, None
@@ -91,7 +108,6 @@ def load_data(m_name):
 st.sidebar.title("ABI SETTINGS")
 l_sel = st.sidebar.radio("LANGUAGE / ЯЗЫК", ["RU", "EN"])
 T = LANG[l_sel]
-
 m_sel = st.sidebar.selectbox(T["market"], list(DB.keys()))
 c_sel = st.sidebar.radio(T["curr"], ["USD ($)", "RUB (₽)", "KZT (₸)"])
 
@@ -110,23 +126,25 @@ if not assets:
     """, unsafe_allow_html=True)
 else:
     sign = c_sel.split("(")[1][0]
-    r_target = rates[sign]
+    r_target = rates.get(sign, 1.0)
 
+    # Таблица ТОП-15
     st.write(f"## {T['top']}")
     df_top = pd.DataFrame(assets)
-    df_top["PROFIT_EST"] = ((df_top["F_USD"] / df_top["P_USD"]) - 1) * 100
+    df_top["PROFIT_EST"] = ((df_top["F_USD"] / df_top["P_USD"].replace(0, 1)) - 1) * 100
     df_top = df_top.sort_values(by="PROFIT_EST", ascending=False).reset_index(drop=True)
     df_top.index += 1
     
     df_show = df_top.copy()
-    df_show[T["price"]] = (df_show["P_USD"] * r_target).fillna(0).apply(lambda x: f"{x:,.2f} {sign}")
-    df_show[T["pred"]] = df_show["PROFIT_EST"].fillna(0).apply(lambda x: f"{x:+.2f}%")
-    st.dataframe(df_show[["T", T["price"], T["pred"]]], use_container_width=True, height=550)
+    df_show[T["price"]] = (df_show["P_USD"] * r_target).apply(lambda x: f"{x:,.2f} {sign}" if not np.isnan(x) else f"0.00 {sign}")
+    df_show[T["pred"]] = df_show["PROFIT_EST"].apply(lambda x: f"{x:+.2f}%" if not np.isnan(x) else "0.00%")
+    st.dataframe(df_show[["T", T["price"], T["pred"]]], use_container_width=True, height=400)
 
     st.divider()
     t_name = st.selectbox(T["sel"], df_top["T"].tolist())
     item = next(x for x in assets if x['T'] == t_name)
 
+    # Прогноз (фикс сессии)
     if "f_usd" not in st.session_state or st.session_state.get("last_t") != t_name:
         st.session_state.f_usd = [item['P_USD'] * (1 + np.random.normal(item['AVG'], item['STD'])) for _ in range(7)]
         st.session_state.last_t = t_name
@@ -135,6 +153,7 @@ else:
     f_prices = [p * r_target for p in st.session_state.f_usd]
     profit_pct = ((f_prices[-1] / p_now) - 1) * 100 if p_now != 0 else 0
 
+    # Метрики без NaN
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"<div class='metric-card'>{T['now']}<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='metric-card'>{T['target']}<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
@@ -144,7 +163,7 @@ else:
     col_graph, col_table = st.columns([2, 1])
     with col_graph:
         st.write(f"### {T['chart']}")
-        hist_vals = (item['DF']['Close'].tail(15).values / (item['P_USD'] / p_now))
+        hist_vals = (item['DF']['Close'].tail(15).values * r_target / (item['P_USD'] * r_target / p_now)) if p_now != 0 else np.zeros(15)
         st.line_chart(np.append(hist_vals, f_prices), color="#00ffcc")
     with col_table:
         st.write(f"### {T['days']}")
