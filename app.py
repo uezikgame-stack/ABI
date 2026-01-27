@@ -113,4 +113,4 @@ if assets:
         "ЦЕНА": [f"{p:,.2f} {sign}" for p in f_prices],
         "ИЗМЕНЕНИЕ": [f"{((p/p_now)-1)*100:+.2f}%" for p in f_prices]
     })
-    st.dataframe(days_df, use_container_width=True, hide_index=True)
+    st.dataframe(days_df, use_container_width=True, hide_index=True)    st.table(days_df) # Используем table для четкости
