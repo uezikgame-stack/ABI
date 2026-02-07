@@ -62,15 +62,15 @@ LANG = {
         "chart": "ГРАФИК ПРОГНОЗА", "days": "РАЗБОР ПО ДНЯМ", "day_label": "День", "signal": "СИГНАЛ",
         "buy": "ПОКУПАТЬ", "sell": "ПРОДАВАТЬ", "hold": "УДЕРЖИВАТЬ",
         "err": "РЕГИОН ВРЕМЕННО НЕДОСТУПЕН", "dino_msg": "Пока данные грузятся, побей рекорд!",
-        "news_tab": "НОВОСТИ"
+        "news_tab": "НОВОСТИ РЫНКА"
     },
     "EN": {
         "market": "MARKET", "curr": "CURRENCY", "top": "🔥 TOP ASSETS", "price": "PRICE", "pred": "FORECAST %",
-        "sel": "SELECT FOR ANALYSIS:", "now": "CURRENT", "target": "TARGET (7д)", "profit": "PROFIT (%)",
+        "sel": "SELECT FOR ANALYSIS:", "now": "CURRENT", "target": "TARGET (7d)", "profit": "PROFIT (%)",
         "chart": "FORECAST CHART", "days": "DAILY BREAKDOWN", "day_label": "Day", "signal": "SIGNAL",
         "buy": "BUY", "sell": "SELL", "hold": "HOLD",
         "err": "REGION UNAVAILABLE", "dino_msg": "Beat the record while data is loading!",
-        "news_tab": "NEWS"
+        "news_tab": "MARKET NEWS"
     }
 }
 
@@ -98,11 +98,12 @@ def fetch_all(m_name):
         return clean, r_map
     except: return [], {"$": 1.0, "₽": 90.0, "₸": 485.0}
 
-# Функция для новостей
-def get_news(ticker):
+# Функция для получения свежих новостей из yfinance
+def get_stock_news(ticker):
     try:
         return yf.Ticker(ticker).news[:5]
-    except: return []
+    except:
+        return []
 
 # --- 3. ИНТЕРФЕЙС RILLET ---
 st.sidebar.markdown('<div class="logo-text">RILLET</div>', unsafe_allow_html=True)
@@ -117,15 +118,14 @@ r_val = rates.get(sign, 1.0)
 
 st.title("🚀 RILLET")
 
-# СОЗДАЕМ ВКЛАДКИ
-tab_main, tab_news = st.tabs(["АНАЛИТИКА", T["news_tab"]])
+# РАЗДЕЛЕНИЕ НА ВКЛАДКИ
+tab_analyst, tab_news = st.tabs(["АНАЛИТИКА", T["news_tab"]])
 
-with tab_main:
+with tab_analyst:
     if not assets:
         st.markdown(f"""<div class='unified-card'><h2 style='color:#ff4b4b!important;'>⚠️ {T['err']}</h2><p>{T['dino_msg']}</p>
         <div class='dino-container'><iframe src='https://chromedino.com/' frameborder='0' scrolling='no'></iframe></div></div>""", unsafe_allow_html=True)
     else:
-        # ТОП АКТИВОВ (Твой оригинальный расчет)
         st.write(f"### {T['top']}")
         df_main = pd.DataFrame(assets)
         df_main["PROFIT_EST"] = ((df_main["F_USD"] / df_main["P_USD"]) - 1) * 100
@@ -137,8 +137,6 @@ with tab_main:
         st.dataframe(view[["T", T["price"], T["pred"]]], use_container_width=True, height=400)
 
         st.divider()
-        
-        # АНАЛИЗ ВЫБРАННОГО
         t_sel = st.selectbox(T["sel"], df_main["T"].tolist())
         item = next(x for x in assets if x['T'] == t_sel)
 
@@ -179,21 +177,21 @@ with tab_main:
 
 with tab_news:
     st.write(f"### 📰 {T['news_tab']}")
-    ticker_news = t_sel if assets else "AAPL"
-    news_items = get_news(ticker_news)
+    # Подтягиваем новости для выбранного в данный момент тикера
+    stock_news = get_stock_news(t_sel if assets else "AAPL")
     
-    if news_items:
-        for n in news_items:
-            # БЕЗОПАСНОЕ ПОЛУЧЕНИЕ ДАННЫХ (БЕЗ KEYERROR)
-            n_title = n.get('title', 'No title')
-            n_link = n.get('link', '#')
-            n_pub = n.get('publisher', 'Financial News')
+    if stock_news:
+        for n in stock_news:
+            # Безопасное извлечение данных (фикс KeyError)
+            title = n.get('title', 'Без заголовка')
+            link = n.get('link', '#')
+            publisher = n.get('publisher', 'Источник не указан')
             
             st.markdown(f"""
             <div class="news-card">
-                <h4 style='margin:0;'><a href="{n_link}" target="_blank" style='text-decoration:none; color:#00ffcc;'>{n_title}</a></h4>
-                <p style='font-size:0.8em; color:#888;'>{n_pub}</p>
+                <h4 style='margin:0;'><a href="{link}" target="_blank" style='text-decoration:none; color:#00ffcc;'>{title}</a></h4>
+                <p style='font-size:0.8em; color:#888;'>Источник: {publisher}</p>
             </div>
             """, unsafe_allow_html=True)
     else:
-        st.write("Новости для этого актива пока не найдены.")
+        st.info("Новости для этого актива временно недоступны.")
