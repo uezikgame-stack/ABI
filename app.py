@@ -3,6 +3,8 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from gnews import GNews
+from datetime import datetime
+import streamlit.components.v1 as components
 
 # --- 1. СТИЛЬ И БРЕНДИНГ RILLET ---
 st.set_page_config(page_title="Rillet", layout="wide")
@@ -22,19 +24,12 @@ st.markdown("""
     h1, h2, h3, p, span, label { color: #00ffcc !important; }
     
     .logo-text {
-        font-size: 42px;
-        font-weight: bold;
-        text-align: center;
-        color: #00ffcc;
-        border-bottom: 2px solid #00ffcc;
-        margin-bottom: 20px;
+        font-size: 42px; font-weight: bold; text-align: center; color: #00ffcc;
+        border-bottom: 2px solid #00ffcc; margin-bottom: 20px;
     }
     .news-card {
-        background: rgba(0, 255, 204, 0.05);
-        border-left: 5px solid #00ffcc;
-        padding: 15px;
-        margin-bottom: 10px;
-        border-radius: 5px;
+        background: rgba(0, 255, 204, 0.05); border-left: 5px solid #00ffcc;
+        padding: 15px; margin-bottom: 10px; border-radius: 5px;
     }
     .unified-card {
         background: rgba(0, 0, 0, 0.95); border: 2px solid #ff4b4b; border-radius: 15px;
@@ -75,8 +70,12 @@ LANG = {
     }
 }
 
-@st.cache_data(ttl=300)
-def fetch_all(m_name):
+# Ключ для ежедневного обновления
+def get_daily_key():
+    return datetime.now().strftime("%Y-%m-%d")
+
+@st.cache_data(ttl=86400)
+def fetch_all(m_name, daily_key):
     try:
         tickers = DB[m_name]
         data = yf.download(tickers, period="1mo", interval="1d", group_by='ticker', progress=False)
@@ -99,15 +98,12 @@ def fetch_all(m_name):
         return clean, r_map
     except: return [], {"$": 1.0, "₽": 90.0, "₸": 485.0}
 
-def get_gnews(query, lang_code):
+@st.cache_data(ttl=86400)
+def get_gnews_data(query, lang_code, daily_key):
     try:
-        # Настройка языка поиска в зависимости от выбора в приложении
-        gn = GNews(language='ru' if lang_code == 'RU' else 'en', 
-                   country='RU' if lang_code == 'RU' else 'US', 
-                   period='7d', max_results=6)
-        return gn.get_news(f"{query} stock market")
-    except:
-        return []
+        gn = GNews(language='ru' if lang_code == 'RU' else 'en', period='7d', max_results=6)
+        return gn.get_news(f"{query} акции прогноз")
+    except: return []
 
 # --- 3. ИНТЕРФЕЙС RILLET ---
 st.sidebar.markdown('<div class="logo-text">RILLET</div>', unsafe_allow_html=True)
@@ -116,20 +112,22 @@ T = LANG[l_code]
 m_name = st.sidebar.selectbox(T["market"], list(DB.keys()))
 c_name = st.sidebar.radio(T["curr"], ["USD ($)", "RUB (₽)", "KZT (₸)"])
 
-assets, rates = fetch_all(m_name)
+# Обновление данных
+daily_token = get_daily_key()
+assets, rates = fetch_all(m_name, daily_token)
 sign = c_name.split("(")[1][0]
 r_val = rates.get(sign, 1.0)
 
 st.title("🚀 RILLET")
 
-# ВКЛАДКИ
-tab1, tab2 = st.tabs(["📊 АНАЛИТИКА", f"📰 {T['news_tab']}"])
+tab_analyst, tab_news = st.tabs(["📊 АНАЛИТИКА", f"📰 {T['news_tab']}"])
 
-with tab1:
+with tab_analyst:
     if not assets:
         st.markdown(f"""<div class='unified-card'><h2 style='color:#ff4b4b!important;'>⚠️ {T['err']}</h2><p>{T['dino_msg']}</p>
         <div class='dino-container'><iframe src='https://chromedino.com/' frameborder='0' scrolling='no'></iframe></div></div>""", unsafe_allow_html=True)
     else:
+        # Твой оригинальный расчет топа
         st.write(f"### {T['top']}")
         df_main = pd.DataFrame(assets)
         df_main["PROFIT_EST"] = ((df_main["F_USD"] / df_main["P_USD"]) - 1) * 100
@@ -138,12 +136,13 @@ with tab1:
         view = df_main.copy()
         view[T["price"]] = (view["P_USD"] * r_val).apply(lambda x: f"{x:,.2f} {sign}")
         view[T["pred"]] = view["PROFIT_EST"].apply(lambda x: f"{x:+.2f}%")
-        st.dataframe(view[["T", T["price"], T["pred"]]], use_container_width=True, height=350)
+        st.dataframe(view[["T", T["price"], T["pred"]]], use_container_width=True, height=400)
 
         st.divider()
         t_sel = st.selectbox(T["sel"], df_main["T"].tolist())
         item = next(x for x in assets if x['T'] == t_sel)
 
+        # Твоя логика прогноза
         p_now = item['P_USD'] * r_val
         if "cache_t" not in st.session_state or st.session_state.cache_t != t_sel:
             gen_pts = []
@@ -163,7 +162,7 @@ with tab1:
         clr = "#00ffcc" if pct > 0.5 else ("#ff4b4b" if pct < -0.5 else "#ffcc00")
         c3.markdown(f"<div class='metric-card' style='border-color:{clr}'>{T['profit']}<br><h3>{pct:+.2f}%</h3></div>", unsafe_allow_html=True)
 
-        cg, ct = st.columns([2, 1])
+        cg, ct = st.columns([1, 1])
         with cg:
             st.write(f"#### {T['chart']}")
             hist = item['DF']['Close'].tail(15).values * r_val / (item['P_USD'] * r_val / p_now)
@@ -179,22 +178,21 @@ with tab1:
         res = "buy" if pct > 0.5 else ("sell" if pct < -0.5 else "hold")
         st.markdown(f"<h2 style='text-align:center; border:2px solid {clr}; padding:10px; border-radius:10px;'>{T['signal']}: {T[res]}</h2>", unsafe_allow_html=True)
 
-with tab2:
-    st.write(f"### 🌐 Google News: {t_sel if assets else 'Market'}")
-    with st.spinner('Получение новостей из GNews...'):
-        news_list = get_gnews(t_sel if assets else "Stock Market", l_code)
-        
-    if news_list:
-        for n in news_list:
-            n_title = n.get('title', 'Market News')
-            n_url = n.get('url', '#')
-            n_source = n.get('publisher', {}).get('title', 'GNews')
-            
-            st.markdown(f"""
-            <div class="news-card">
-                <h4 style='margin:0;'><a href="{n_url}" target="_blank" style='text-decoration:none; color:#00ffcc;'>{n_title}</a></h4>
-                <p style='font-size:0.8em; color:#888; margin-top:5px;'>Источник: {n_source}</p>
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.info("Новостей по этому активу в GNews пока нет. Попробуйте другой регион.")
+with tab_news:
+    st.write(f"### 📰 Google News: {t_sel}")
+    news_items = get_gnews_data(t_sel, l_code, daily_token)
+    
+    n_col1, n_col2 = st.columns([1, 2])
+    
+    with n_col1:
+        for i, n in enumerate(news_items):
+            if st.button(f"📖 {n.get('title')[:60]}...", key=f"n_{i}"):
+                st.session_state.active_url = n.get('url')
+    
+    with n_col2:
+        url = st.session_state.get('active_url', news_items[0].get('url') if news_items else None)
+        if url:
+            st.markdown(f"**Источник:** {url}")
+            components.iframe(url, height=700, scrolling=True)
+        else:
+            st.info("Выберите новость слева")
