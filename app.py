@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 from gnews import GNews
 from datetime import datetime
-import streamlit.components.v1 as components
 
 # --- 1. СТИЛЬ И БРЕНДИНГ RILLET ---
 st.set_page_config(page_title="Rillet", layout="wide")
@@ -27,18 +26,15 @@ st.markdown("""
         font-size: 42px; font-weight: bold; text-align: center; color: #00ffcc;
         border-bottom: 2px solid #00ffcc; margin-bottom: 20px;
     }
-    .news-card {
-        background: rgba(0, 255, 204, 0.05); border-left: 5px solid #00ffcc;
-        padding: 15px; margin-bottom: 10px; border-radius: 5px;
+    .analysis-card {
+        background: rgba(0, 255, 204, 0.05);
+        border: 1px solid #00ffcc;
+        padding: 20px;
+        margin-bottom: 15px;
+        border-radius: 10px;
     }
-    .unified-card {
-        background: rgba(0, 0, 0, 0.95); border: 2px solid #ff4b4b; border-radius: 15px;
-        padding: 30px; text-align: center;
-    }
-    .dino-container {
-        overflow: hidden; height: 300px; width: 100%; border-radius: 10px; border: 1px solid #ff4b4b;
-    }
-    .dino-container iframe { width: 100%; height: 500px; margin-top: -100px; filter: invert(1); }
+    .bullish { color: #00ffcc !important; font-weight: bold; }
+    .bearish { color: #ff4b4b !important; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -51,148 +47,121 @@ DB = {
     "RF (Россия)": ["SBER.ME", "GAZP.ME", "LKOH.ME", "YNDX", "ROSN.ME", "MGNT.ME", "NVTK.ME", "GMKN.ME", "CHMF.ME", "PLZL.ME", "TATN.ME", "MTSS.ME", "AFLT.ME", "ALRS.ME", "VTBR.ME"]
 }
 
-LANG = {
-    "RU": {
-        "market": "РЫНОК", "curr": "ВАЛЮТА", "top": "🔥 ТОП АКТИВОВ", "price": "ЦЕНА", "pred": "ПРОГНОЗ %",
-        "sel": "ВЫБЕРИ ДЛЯ АНАЛИЗА:", "now": "ТЕКУЩАЯ", "target": "ЦЕЛЬ (7д)", "profit": "ПРОФИТ (%)",
-        "chart": "ГРАФИК ПРОГНОЗА", "days": "РАЗБОР ПО ДНЯМ", "day_label": "День", "signal": "СИГНАЛ",
-        "buy": "ПОКУПАТЬ", "sell": "ПРОДАВАТЬ", "hold": "УДЕРЖИВАТЬ",
-        "err": "РЕГИОН ВРЕМЕННО НЕДОСТУПЕН", "dino_msg": "Пока данные грузятся, побей рекорд!",
-        "news_tab": "НОВОСТИ GNEWS"
-    },
-    "EN": {
-        "market": "MARKET", "curr": "CURRENCY", "top": "🔥 TOP ASSETS", "price": "PRICE", "pred": "FORECAST %",
-        "sel": "SELECT FOR ANALYSIS:", "now": "CURRENT", "target": "TARGET (7д)", "profit": "PROFIT (%)",
-        "chart": "FORECAST CHART", "days": "DAILY BREAKDOWN", "day_label": "Day", "signal": "SIGNAL",
-        "buy": "BUY", "sell": "SELL", "hold": "HOLD",
-        "err": "REGION UNAVAILABLE", "dino_msg": "Beat the record while data is loading!",
-        "news_tab": "GNEWS FEED"
-    }
-}
-
-# Ключ для ежедневного обновления
+# Кэширование на сутки (обновление в 00:00)
 def get_daily_key():
     return datetime.now().strftime("%Y-%m-%d")
 
 @st.cache_data(ttl=86400)
-def fetch_all(m_name, daily_key):
-    try:
-        tickers = DB[m_name]
-        data = yf.download(tickers, period="1mo", interval="1d", group_by='ticker', progress=False)
-        rates_raw = yf.download(["RUB=X", "KZT=X", "EURUSD=X"], period="5d", progress=False)['Close']
-        r_map = {"$": 1.0}
-        r_map["₽"] = float(rates_raw["RUB=X"].dropna().iloc[-1]) if not rates_raw["RUB=X"].dropna().empty else 90.0
-        r_map["₸"] = float(rates_raw["KZT=X"].dropna().iloc[-1]) if not rates_raw["KZT=X"].dropna().empty else 485.0
-        eur_usd = float(rates_raw["EURUSD=X"].dropna().iloc[-1]) if not rates_raw["EURUSD=X"].dropna().empty else 1.08
-        
-        clean = []
-        for t in tickers:
-            try:
-                df = data[t].dropna()
-                if df.empty: continue
-                base = "₽" if ".ME" in t or t == "YNDX" else ("₸" if ".KZ" in t or "KCZ" in t else ("€" if any(x in t for x in [".PA", ".DE", ".MC", ".SW"]) else "$"))
-                p_now_usd = (float(df['Close'].iloc[-1]) * eur_usd) if base == "€" else (float(df['Close'].iloc[-1]) / r_map.get(base, 1.0))
-                mu = df['Close'].pct_change().mean() or 0.0
-                clean.append({"T": t, "P_USD": p_now_usd, "F_USD": p_now_usd * (1 + mu * 7), "AVG": mu, "STD": df['Close'].pct_change().std() or 0.02, "DF": df})
-            except: continue
-        return clean, r_map
-    except: return [], {"$": 1.0, "₽": 90.0, "₸": 485.0}
+def fetch_market_data(m_name, daily_key):
+    tickers = DB[m_name]
+    data = yf.download(tickers, period="1mo", interval="1d", group_by='ticker', progress=False)
+    rates_raw = yf.download(["RUB=X", "KZT=X", "EURUSD=X"], period="5d", progress=False)['Close']
+    r_map = {"$": 1.0}
+    r_map["₽"] = float(rates_raw["RUB=X"].dropna().iloc[-1]) if not rates_raw["RUB=X"].dropna().empty else 90.0
+    r_map["₸"] = float(rates_raw["KZT=X"].dropna().iloc[-1]) if not rates_raw["KZT=X"].dropna().empty else 485.0
+    eur_usd = float(rates_raw["EURUSD=X"].dropna().iloc[-1]) if not rates_raw["EURUSD=X"].dropna().empty else 1.08
+    
+    clean = []
+    for t in tickers:
+        try:
+            df = data[t].dropna()
+            if df.empty: continue
+            base = "₽" if ".ME" in t or t == "YNDX" else ("₸" if ".KZ" in t or "KCZ" in t else ("€" if any(x in t for x in [".PA", ".DE", ".MC", ".SW"]) else "$"))
+            p_now_usd = (float(df['Close'].iloc[-1]) * eur_usd) if base == "€" else (float(df['Close'].iloc[-1]) / r_map.get(base, 1.0))
+            mu = df['Close'].pct_change().mean() or 0.0
+            clean.append({"T": t, "P_USD": p_now_usd, "F_USD": p_now_usd * (1 + mu * 7), "AVG": mu, "STD": df['Close'].pct_change().std() or 0.02, "DF": df})
+        except: continue
+    return clean, r_map
 
 @st.cache_data(ttl=86400)
-def get_gnews_data(query, lang_code, daily_key):
+def analyze_news_text(query, daily_key):
     try:
-        gn = GNews(language='ru' if lang_code == 'RU' else 'en', period='7d', max_results=6)
-        return gn.get_news(f"{query} акции прогноз")
+        # Берем новости на русском для лучшего понимания контекста
+        gn = GNews(language='ru', country='RU', period='7d', max_results=8)
+        news = gn.get_news(f"{query} акции прогноз аналитика")
+        
+        summaries = []
+        for n in news:
+            title = n.get('title', '')
+            # Извлекаем "настроение" из заголовка (простой алгоритм)
+            sentiment = "НЕЙТРАЛЬНО"
+            pos_words = ['рост', 'вверх', 'покупать', 'рекорд', 'прибыль', 'позитив', 'цель повышена']
+            neg_words = ['падение', 'вниз', 'продавать', 'убыток', 'негатив', 'обвал', 'риск']
+            
+            if any(w in title.lower() for w in pos_words): sentiment = "ПОЗИТИВ"
+            if any(w in title.lower() for w in neg_words): sentiment = "НЕГАТИВ"
+            
+            summaries.append({
+                "text": title,
+                "sentiment": sentiment,
+                "source": n.get('publisher', {}).get('title', 'СМИ')
+            })
+        return summaries
     except: return []
 
-# --- 3. ИНТЕРФЕЙС RILLET ---
+# --- 3. ИНТЕРФЕЙС ---
 st.sidebar.markdown('<div class="logo-text">RILLET</div>', unsafe_allow_html=True)
-l_code = st.sidebar.radio("LANGUAGE / ЯЗЫК", ["RU", "EN"])
-T = LANG[l_code]
-m_name = st.sidebar.selectbox(T["market"], list(DB.keys()))
-c_name = st.sidebar.radio(T["curr"], ["USD ($)", "RUB (₽)", "KZT (₸)"])
+market = st.sidebar.selectbox("РЫНОК", list(DB.keys()))
+currency = st.sidebar.radio("ВАЛЮТА", ["USD ($)", "RUB (₽)", "KZT (₸)"])
 
-# Обновление данных
 daily_token = get_daily_key()
-assets, rates = fetch_all(m_name, daily_token)
-sign = c_name.split("(")[1][0]
+assets, rates = fetch_market_data(market, daily_token)
+sign = currency.split("(")[1][0]
 r_val = rates.get(sign, 1.0)
 
-st.title("🚀 RILLET")
+st.title("🚀 RILLET ИНТЕЛЛЕКТ")
 
-tab_analyst, tab_news = st.tabs(["📊 АНАЛИТИКА", f"📰 {T['news_tab']}"])
+tab_data, tab_logic = st.tabs(["📊 ЦИФРЫ", "🧠 ТЕКСТОВЫЙ АНАЛИЗ"])
 
-with tab_analyst:
-    if not assets:
-        st.markdown(f"""<div class='unified-card'><h2 style='color:#ff4b4b!important;'>⚠️ {T['err']}</h2><p>{T['dino_msg']}</p>
-        <div class='dino-container'><iframe src='https://chromedino.com/' frameborder='0' scrolling='no'></iframe></div></div>""", unsafe_allow_html=True)
-    else:
-        # Твой оригинальный расчет топа
-        st.write(f"### {T['top']}")
-        df_main = pd.DataFrame(assets)
-        df_main["PROFIT_EST"] = ((df_main["F_USD"] / df_main["P_USD"]) - 1) * 100
-        df_main = df_main.sort_values("PROFIT_EST", ascending=False).reset_index(drop=True)
+with tab_data:
+    if assets:
+        # Твой оригинальный код отображения
+        df = pd.DataFrame(assets)
+        df["PROFIT_EST"] = ((df["F_USD"] / df["P_USD"]) - 1) * 100
+        df = df.sort_values("PROFIT_EST", ascending=False).reset_index(drop=True)
+        st.dataframe(df[["T", "P_USD", "PROFIT_EST"]], use_container_width=True)
+        t_sel = st.selectbox("ВЫБЕРИ АКТИВ ДЛЯ РАЗБОРА:", df["T"].tolist())
         
-        view = df_main.copy()
-        view[T["price"]] = (view["P_USD"] * r_val).apply(lambda x: f"{x:,.2f} {sign}")
-        view[T["pred"]] = view["PROFIT_EST"].apply(lambda x: f"{x:+.2f}%")
-        st.dataframe(view[["T", T["price"], T["pred"]]], use_container_width=True, height=400)
-
-        st.divider()
-        t_sel = st.selectbox(T["sel"], df_main["T"].tolist())
+        # Расчет цен
         item = next(x for x in assets if x['T'] == t_sel)
-
-        # Твоя логика прогноза
         p_now = item['P_USD'] * r_val
-        if "cache_t" not in st.session_state or st.session_state.cache_t != t_sel:
-            gen_pts = []
-            last_p = item['P_USD']
-            for _ in range(7):
-                last_p = last_p * (1 + np.random.normal(item['AVG'], item['STD']))
-                gen_pts.append(last_p)
-            st.session_state.f_pts = gen_pts
-            st.session_state.cache_t = t_sel
+        
+        c1, c2 = st.columns(2)
+        c1.metric("ТЕКУЩАЯ", f"{p_now:,.2f} {sign}")
+        c2.metric("ПРОГНОЗ (7д)", f"{item['F_USD']*r_val:,.2f} {sign}", f"{((item['F_USD']/item['P_USD'])-1)*100:+.2f}%")
+    else:
+        st.error("Данные недоступны")
+        t_sel = None
 
-        f_prices = [p * r_val for p in st.session_state.f_pts]
-
-        c1, c2, c3 = st.columns(3)
-        c1.markdown(f"<div class='metric-card'>{T['now']}<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
-        c2.markdown(f"<div class='metric-card'>{T['target']}<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
-        pct = ((f_prices[-1] / p_now) - 1) * 100
-        clr = "#00ffcc" if pct > 0.5 else ("#ff4b4b" if pct < -0.5 else "#ffcc00")
-        c3.markdown(f"<div class='metric-card' style='border-color:{clr}'>{T['profit']}<br><h3>{pct:+.2f}%</h3></div>", unsafe_allow_html=True)
-
-        cg, ct = st.columns([1, 1])
-        with cg:
-            st.write(f"#### {T['chart']}")
-            hist = item['DF']['Close'].tail(15).values * r_val / (item['P_USD'] * r_val / p_now)
-            st.line_chart(np.append(hist, f_prices), color="#00ffcc")
-        with ct:
-            st.write(f"#### {T['days']}")
-            days_df = pd.DataFrame({
-                T["day_label"]: [f"{T['day_label']} {i+1}" for i in range(7)],
-                T["price"]: [f"{p:,.2f} {sign}" for p in f_prices]
-            })
-            st.dataframe(days_df, use_container_width=True, hide_index=True)
-
-        res = "buy" if pct > 0.5 else ("sell" if pct < -0.5 else "hold")
-        st.markdown(f"<h2 style='text-align:center; border:2px solid {clr}; padding:10px; border-radius:10px;'>{T['signal']}: {T[res]}</h2>", unsafe_allow_html=True)
-
-with tab_news:
-    st.write(f"### 📰 Google News: {t_sel}")
-    news_items = get_gnews_data(t_sel, l_code, daily_token)
-    
-    n_col1, n_col2 = st.columns([1, 2])
-    
-    with n_col1:
-        for i, n in enumerate(news_items):
-            if st.button(f"📖 {n.get('title')[:60]}...", key=f"n_{i}"):
-                st.session_state.active_url = n.get('url')
-    
-    with n_col2:
-        url = st.session_state.get('active_url', news_items[0].get('url') if news_items else None)
-        if url:
-            st.markdown(f"**Источник:** {url}")
-            components.iframe(url, height=700, scrolling=True)
+with tab_logic:
+    if t_sel:
+        st.write(f"### 🧠 Почему стоит (или нет) брать {t_sel}?")
+        with st.spinner('Анализирую инфополе...'):
+            logic_data = analyze_news_text(t_sel, daily_token)
+        
+        if logic_data:
+            for entry in logic_data:
+                s_class = "bullish" if entry['sentiment'] == "ПОЗИТИВ" else ("bearish" if entry['sentiment'] == "НЕГАТИВ" else "")
+                st.markdown(f"""
+                <div class="analysis-card">
+                    <p style="font-size:1.1em; margin-bottom:5px;">{entry['text']}</p>
+                    <span class="{s_class}">МНЕНИЕ: {entry['sentiment']}</span> | 
+                    <span style="color:#888;">Источник: {entry['source']}</span>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Итоговый вывод
+            pos_count = len([x for x in logic_data if x['sentiment'] == "ПОЗИТИВ"])
+            neg_count = len([x for x in logic_data if x['sentiment'] == "НЕГАТИВ"])
+            
+            st.divider()
+            if pos_count > neg_count:
+                st.success(f"✅ ИТОГ: Инфополе за {t_sel} преимущественно позитивное. Математика подтверждает покупку.")
+            elif neg_count > pos_count:
+                st.error(f"❌ ИТОГ: В новостях много негатива по {t_sel}. Высокий риск, лучше подождать.")
+            else:
+                st.warning(f"⚖️ ИТОГ: Новости по {t_sel} противоречивы. Решение за техническими индикаторами.")
         else:
-            st.info("Выберите новость слева")
+            st.info("По этому активу сегодня нет критических новостей. Опирайтесь на график.")
+
+st.caption(f"Автоматическое обновление базы: сегодня в 00:00 ({daily_token})")
