@@ -28,6 +28,13 @@ st.markdown("""
         border-bottom: 2px solid #00ffcc;
         margin-bottom: 20px;
     }
+    .news-card {
+        background: rgba(0, 255, 204, 0.05);
+        border-left: 5px solid #00ffcc;
+        padding: 15px;
+        margin-bottom: 10px;
+        border-radius: 5px;
+    }
     .unified-card {
         background: rgba(0, 0, 0, 0.95); border: 2px solid #ff4b4b; border-radius: 15px;
         padding: 30px; text-align: center;
@@ -39,7 +46,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. БАЗА ДАННЫХ (ПО 15 АКТИВОВ) ---
+# --- 2. БАЗА ДАННЫХ ---
 DB = {
     "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL", "META", "INTC", "CRM", "AVGO", "QCOM", "PYPL", "TSM"],
     "CHINA (Китай)": ["BABA", "TCEHY", "PDD", "JD", "BIDU", "NIO", "LI", "BYDDY", "BILI", "NTES", "GDS", "ZLAB", "KC", "IQ", "TME"],
@@ -54,14 +61,16 @@ LANG = {
         "sel": "ВЫБЕРИ ДЛЯ АНАЛИЗА:", "now": "ТЕКУЩАЯ", "target": "ЦЕЛЬ (7д)", "profit": "ПРОФИТ (%)",
         "chart": "ГРАФИК ПРОГНОЗА", "days": "РАЗБОР ПО ДНЯМ", "day_label": "День", "signal": "СИГНАЛ",
         "buy": "ПОКУПАТЬ", "sell": "ПРОДАВАТЬ", "hold": "УДЕРЖИВАТЬ",
-        "err": "РЕГИОН ВРЕМЕННО НЕДОСТУПЕН", "dino_msg": "Пока данные грузятся, побей рекорд!"
+        "err": "РЕГИОН ВРЕМЕННО НЕДОСТУПЕН", "dino_msg": "Пока данные грузятся, побей рекорд!",
+        "tab_an": "Аналитика", "tab_news": "Новости рынка"
     },
     "EN": {
         "market": "MARKET", "curr": "CURRENCY", "top": "🔥 TOP ASSETS", "price": "PRICE", "pred": "FORECAST %",
-        "sel": "SELECT FOR ANALYSIS:", "now": "CURRENT", "target": "TARGET (7д)", "profit": "PROFIT (%)",
+        "sel": "SELECT FOR ANALYSIS:", "now": "CURRENT", "target": "TARGET (7d)", "profit": "PROFIT (%)",
         "chart": "FORECAST CHART", "days": "DAILY BREAKDOWN", "day_label": "Day", "signal": "SIGNAL",
         "buy": "BUY", "sell": "SELL", "hold": "HOLD",
-        "err": "REGION UNAVAILABLE", "dino_msg": "Beat the record while data is loading!"
+        "err": "REGION UNAVAILABLE", "dino_msg": "Beat the record while data is loading!",
+        "tab_an": "Analytics", "tab_news": "Market News"
     }
 }
 
@@ -89,6 +98,12 @@ def fetch_all(m_name):
         return clean, r_map
     except: return [], {"$": 1.0, "₽": 90.0, "₸": 485.0}
 
+def get_news(ticker):
+    try:
+        t_info = yf.Ticker(ticker)
+        return t_info.news[:5] # Последние 5 новостей
+    except: return []
+
 # --- 3. ИНТЕРФЕЙС RILLET ---
 st.sidebar.markdown('<div class="logo-text">RILLET</div>', unsafe_allow_html=True)
 l_code = st.sidebar.radio("LANGUAGE / ЯЗЫК", ["RU", "EN"])
@@ -102,61 +117,75 @@ r_val = rates.get(sign, 1.0)
 
 st.title("🚀 RILLET")
 
-if not assets:
-    st.markdown(f"""<div class='unified-card'><h2 style='color:#ff4b4b!important;'>⚠️ {T['err']}</h2><p>{T['dino_msg']}</p>
-    <div class='dino-container'><iframe src='https://chromedino.com/' frameborder='0' scrolling='no'></iframe></div></div>""", unsafe_allow_html=True)
-else:
-    # ТОП АКТИВОВ
-    st.write(f"### {T['top']}")
-    df_main = pd.DataFrame(assets)
-    df_main["PROFIT_EST"] = ((df_main["F_USD"] / df_main["P_USD"]) - 1) * 100
-    df_main = df_main.sort_values("PROFIT_EST", ascending=False).reset_index(drop=True)
-    
-    view = df_main.copy()
-    view[T["price"]] = (view["P_USD"] * r_val).apply(lambda x: f"{x:,.2f} {sign}")
-    view[T["pred"]] = view["PROFIT_EST"].apply(lambda x: f"{x:+.2f}%")
-    st.dataframe(view[["T", T["price"], T["pred"]]], use_container_width=True, height=400)
+# СОЗДАНИЕ ВКЛАДОК
+tab1, tab2 = st.tabs([T["tab_an"], T["tab_news"]])
 
-    st.divider()
-    
-    # АНАЛИЗ ВЫБРАННОГО
-    t_sel = st.selectbox(T["sel"], df_main["T"].tolist())
-    item = next(x for x in assets if x['T'] == t_sel)
+with tab1:
+    if not assets:
+        st.markdown(f"""<div class='unified-card'><h2 style='color:#ff4b4b!important;'>⚠️ {T['err']}</h2><p>{T['dino_msg']}</p>
+        <div class='dino-container'><iframe src='https://chromedino.com/' frameborder='0' scrolling='no'></iframe></div></div>""", unsafe_allow_html=True)
+    else:
+        st.write(f"### {T['top']}")
+        df_main = pd.DataFrame(assets)
+        df_main["PROFIT_EST"] = ((df_main["F_USD"] / df_main["P_USD"]) - 1) * 100
+        df_main = df_main.sort_values("PROFIT_EST", ascending=False).reset_index(drop=True)
+        
+        view = df_main.copy()
+        view[T["price"]] = (view["P_USD"] * r_val).apply(lambda x: f"{x:,.2f} {sign}")
+        view[T["pred"]] = view["PROFIT_EST"].apply(lambda x: f"{x:+.2f}%")
+        st.dataframe(view[["T", T["price"], T["pred"]]], use_container_width=True, height=400)
 
-    # Синхронизация прогноза
-    p_now = item['P_USD'] * r_val
-    if "cache_t" not in st.session_state or st.session_state.cache_t != t_sel:
-        gen_pts = []
-        last_p = item['P_USD']
-        for _ in range(7):
-            last_p = last_p * (1 + np.random.normal(item['AVG'], item['STD']))
-            gen_pts.append(last_p)
-        st.session_state.f_pts = gen_pts
-        st.session_state.cache_t = t_sel
+        st.divider()
+        t_sel = st.selectbox(T["sel"], df_main["T"].tolist())
+        item = next(x for x in assets if x['T'] == t_sel)
 
-    f_prices = [p * r_val for p in st.session_state.f_pts]
+        p_now = item['P_USD'] * r_val
+        if "cache_t" not in st.session_state or st.session_state.cache_t != t_sel:
+            gen_pts = []
+            last_p = item['P_USD']
+            for _ in range(7):
+                last_p = last_p * (1 + np.random.normal(item['AVG'], item['STD']))
+                gen_pts.append(last_p)
+            st.session_state.f_pts = gen_pts
+            st.session_state.cache_t = t_sel
 
-    # Метрики
-    c1, c2, c3 = st.columns(3)
-    c1.markdown(f"<div class='metric-card'>{T['now']}<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='metric-card'>{T['target']}<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
-    pct = ((f_prices[-1] / p_now) - 1) * 100
-    clr = "#00ffcc" if pct > 0.5 else ("#ff4b4b" if pct < -0.5 else "#ffcc00")
-    c3.markdown(f"<div class='metric-card' style='border-color:{clr}'>{T['profit']}<br><h3>{pct:+.2f}%</h3></div>", unsafe_allow_html=True)
+        f_prices = [p * r_val for p in st.session_state.f_pts]
 
-    # График и Таблица
-    cg, ct = st.columns([2, 1])
-    with cg:
-        st.write(f"#### {T['chart']}")
-        hist = item['DF']['Close'].tail(15).values * r_val / (item['P_USD'] * r_val / p_now)
-        st.line_chart(np.append(hist, f_prices), color="#00ffcc")
-    with ct:
-        st.write(f"#### {T['days']}")
-        days_df = pd.DataFrame({
-            T["day_label"]: [f"{T['day_label']} {i+1}" for i in range(7)],
-            T["price"]: [f"{p:,.2f} {sign}" for p in f_prices]
-        })
-        st.dataframe(days_df, use_container_width=True, hide_index=True)
+        c1, c2, c3 = st.columns(3)
+        c1.markdown(f"<div class='metric-card'>{T['now']}<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
+        c2.markdown(f"<div class='metric-card'>{T['target']}<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
+        pct = ((f_prices[-1] / p_now) - 1) * 100
+        clr = "#00ffcc" if pct > 0.5 else ("#ff4b4b" if pct < -0.5 else "#ffcc00")
+        c3.markdown(f"<div class='metric-card' style='border-color:{clr}'>{T['profit']}<br><h3>{pct:+.2f}%</h3></div>", unsafe_allow_html=True)
 
-    res = "buy" if pct > 0.5 else ("sell" if pct < -0.5 else "hold")
-    st.markdown(f"<h2 style='text-align:center; border:2px solid {clr}; padding:10px; border-radius:10px;'>{T['signal']}: {T[res]}</h2>", unsafe_allow_html=True)
+        cg, ct = st.columns([2, 1])
+        with cg:
+            st.write(f"#### {T['chart']}")
+            hist = item['DF']['Close'].tail(15).values * r_val / (item['P_USD'] * r_val / p_now)
+            st.line_chart(np.append(hist, f_prices), color="#00ffcc")
+        with ct:
+            st.write(f"#### {T['days']}")
+            days_df = pd.DataFrame({
+                T["day_label"]: [f"{T['day_label']} {i+1}" for i in range(7)],
+                T["price"]: [f"{p:,.2f} {sign}" for p in f_prices]
+            })
+            st.dataframe(days_df, use_container_width=True, hide_index=True)
+
+        res = "buy" if pct > 0.5 else ("sell" if pct < -0.5 else "hold")
+        st.markdown(f"<h2 style='text-align:center; border:2px solid {clr}; padding:10px; border-radius:10px;'>{T['signal']}: {T[res]}</h2>", unsafe_allow_html=True)
+
+with tab2:
+    st.write(f"### 📰 {T['tab_news']}")
+    # Показываем новости по выбранному активу из первой вкладки
+    news_items = get_news(t_sel if assets else "AAPL")
+    if news_items:
+        for n in news_items:
+            with st.container():
+                st.markdown(f"""
+                <div class="news-card">
+                    <h4 style='margin:0;'><a href="{n['link']}" target="_blank" style='text-decoration:none; color:#00ffcc;'>{n['title']}</a></h4>
+                    <p style='font-size:0.8em; color:#888;'>Источник: {n.get('publisher', 'Unknown')}</p>
+                </div>
+                """, unsafe_allow_html=True)
+    else:
+        st.write("Новости временно недоступны.")
