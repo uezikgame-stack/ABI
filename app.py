@@ -2,6 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
+from gnews import GNews
 
 # --- 1. СТИЛЬ И БРЕНДИНГ RILLET ---
 st.set_page_config(page_title="Rillet", layout="wide")
@@ -62,15 +63,15 @@ LANG = {
         "chart": "ГРАФИК ПРОГНОЗА", "days": "РАЗБОР ПО ДНЯМ", "day_label": "День", "signal": "СИГНАЛ",
         "buy": "ПОКУПАТЬ", "sell": "ПРОДАВАТЬ", "hold": "УДЕРЖИВАТЬ",
         "err": "РЕГИОН ВРЕМЕННО НЕДОСТУПЕН", "dino_msg": "Пока данные грузятся, побей рекорд!",
-        "news_tab": "НОВОСТИ РЫНКА"
+        "news_tab": "НОВОСТИ GNEWS"
     },
     "EN": {
         "market": "MARKET", "curr": "CURRENCY", "top": "🔥 TOP ASSETS", "price": "PRICE", "pred": "FORECAST %",
-        "sel": "SELECT FOR ANALYSIS:", "now": "CURRENT", "target": "TARGET (7d)", "profit": "PROFIT (%)",
+        "sel": "SELECT FOR ANALYSIS:", "now": "CURRENT", "target": "TARGET (7д)", "profit": "PROFIT (%)",
         "chart": "FORECAST CHART", "days": "DAILY BREAKDOWN", "day_label": "Day", "signal": "SIGNAL",
         "buy": "BUY", "sell": "SELL", "hold": "HOLD",
         "err": "REGION UNAVAILABLE", "dino_msg": "Beat the record while data is loading!",
-        "news_tab": "MARKET NEWS"
+        "news_tab": "GNEWS FEED"
     }
 }
 
@@ -98,10 +99,13 @@ def fetch_all(m_name):
         return clean, r_map
     except: return [], {"$": 1.0, "₽": 90.0, "₸": 485.0}
 
-# Функция для получения свежих новостей из yfinance
-def get_stock_news(ticker):
+def get_gnews(query, lang_code):
     try:
-        return yf.Ticker(ticker).news[:5]
+        # Настройка языка поиска в зависимости от выбора в приложении
+        gn = GNews(language='ru' if lang_code == 'RU' else 'en', 
+                   country='RU' if lang_code == 'RU' else 'US', 
+                   period='7d', max_results=6)
+        return gn.get_news(f"{query} stock market")
     except:
         return []
 
@@ -118,10 +122,10 @@ r_val = rates.get(sign, 1.0)
 
 st.title("🚀 RILLET")
 
-# РАЗДЕЛЕНИЕ НА ВКЛАДКИ
-tab_analyst, tab_news = st.tabs(["АНАЛИТИКА", T["news_tab"]])
+# ВКЛАДКИ
+tab1, tab2 = st.tabs(["📊 АНАЛИТИКА", f"📰 {T['news_tab']}"])
 
-with tab_analyst:
+with tab1:
     if not assets:
         st.markdown(f"""<div class='unified-card'><h2 style='color:#ff4b4b!important;'>⚠️ {T['err']}</h2><p>{T['dino_msg']}</p>
         <div class='dino-container'><iframe src='https://chromedino.com/' frameborder='0' scrolling='no'></iframe></div></div>""", unsafe_allow_html=True)
@@ -134,7 +138,7 @@ with tab_analyst:
         view = df_main.copy()
         view[T["price"]] = (view["P_USD"] * r_val).apply(lambda x: f"{x:,.2f} {sign}")
         view[T["pred"]] = view["PROFIT_EST"].apply(lambda x: f"{x:+.2f}%")
-        st.dataframe(view[["T", T["price"], T["pred"]]], use_container_width=True, height=400)
+        st.dataframe(view[["T", T["price"], T["pred"]]], use_container_width=True, height=350)
 
         st.divider()
         t_sel = st.selectbox(T["sel"], df_main["T"].tolist())
@@ -175,23 +179,22 @@ with tab_analyst:
         res = "buy" if pct > 0.5 else ("sell" if pct < -0.5 else "hold")
         st.markdown(f"<h2 style='text-align:center; border:2px solid {clr}; padding:10px; border-radius:10px;'>{T['signal']}: {T[res]}</h2>", unsafe_allow_html=True)
 
-with tab_news:
-    st.write(f"### 📰 {T['news_tab']}")
-    # Подтягиваем новости для выбранного в данный момент тикера
-    stock_news = get_stock_news(t_sel if assets else "AAPL")
-    
-    if stock_news:
-        for n in stock_news:
-            # Безопасное извлечение данных (фикс KeyError)
-            title = n.get('title', 'Без заголовка')
-            link = n.get('link', '#')
-            publisher = n.get('publisher', 'Источник не указан')
+with tab2:
+    st.write(f"### 🌐 Google News: {t_sel if assets else 'Market'}")
+    with st.spinner('Получение новостей из GNews...'):
+        news_list = get_gnews(t_sel if assets else "Stock Market", l_code)
+        
+    if news_list:
+        for n in news_list:
+            n_title = n.get('title', 'Market News')
+            n_url = n.get('url', '#')
+            n_source = n.get('publisher', {}).get('title', 'GNews')
             
             st.markdown(f"""
             <div class="news-card">
-                <h4 style='margin:0;'><a href="{link}" target="_blank" style='text-decoration:none; color:#00ffcc;'>{title}</a></h4>
-                <p style='font-size:0.8em; color:#888;'>Источник: {publisher}</p>
+                <h4 style='margin:0;'><a href="{n_url}" target="_blank" style='text-decoration:none; color:#00ffcc;'>{n_title}</a></h4>
+                <p style='font-size:0.8em; color:#888; margin-top:5px;'>Источник: {n_source}</p>
             </div>
             """, unsafe_allow_html=True)
     else:
-        st.info("Новости для этого актива временно недоступны.")
+        st.info("Новостей по этому активу в GNews пока нет. Попробуйте другой регион.")
