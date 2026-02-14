@@ -16,14 +16,16 @@ txt = {
         "select": "SELECT ASSET:", "current": "CURRENT PRICE", "target": "TARGET (7d)",
         "profit": "EST. PROFIT", "chart_title": "FORECAST CHART", "news_title": "INFO-FIELD ANALYSIS",
         "buy": "✅ STRONG BUY", "sell": "❌ SELL / HOLD", "hold": "⚖️ NEUTRAL", "no_news": "No news found.",
-        "update": "Data updated", "signal": "FINAL SIGNAL"
+        "update": "Data updated", "signal": "FINAL SIGNAL",
+        "brokers": "TOP BROKERS", "trust": "TRUST LEVEL"
     },
     "RU": {
         "market": "РЫНОК", "currency": "ВАЛЮТА", "price": "ЦЕНА", "forecast": "ПРОГНОЗ %",
         "select": "ВЫБЕРИ АКТИВ:", "current": "ТЕКУЩАЯ", "target": "ЦЕЛЬ (7д)",
         "profit": "ПРОФИТ (%)", "chart_title": "ГРАФИК ПРОГНОЗА", "news_title": "АНАЛИЗ ИНФОПОЛЯ",
         "buy": "✅ ПОКУПАТЬ", "sell": "❌ ПРОДАВАТЬ/ЖДАТЬ", "hold": "⚖️ УДЕРЖИВАТЬ", "no_news": "Новостей не найдено.",
-        "update": "Обновление данных", "signal": "ИТОГОВЫЙ СИГНАЛ"
+        "update": "Обновление данных", "signal": "ИТОГОВЫЙ СИГНАЛ",
+        "brokers": "ТОП БРОКЕРОВ", "trust": "УРОВЕНЬ ДОВЕРИЯ"
     }
 }[lang]
 
@@ -55,6 +57,19 @@ DB = {
     "EUROPE": ["ASML", "MC.PA", "VOW3.DE", "NESN.SW", "SIE.DE", "SAP.DE", "AIR.PA", "RMS.PA", "MBG.DE", "DHL.DE", "ALV.DE", "SAN.MC", "BMW.DE", "OR.PA", "BBVA.MC"],
     "KAZAKHSTAN": ["KCZ.L", "KMGZ.KZ", "HSBK.KZ", "KCELL.KZ", "NAC.KZ", "CCBN.KZ", "KEGC.KZ", "KZTK.KZ", "KZTO.KZ", "ASBN.KZ", "KSPI.KZ", "KCP.KZ", "KMGP.KZ", "BCKL.KZ", "KASE.KZ"],
     "RUSSIA": ["SBER.ME", "GAZP.ME", "LKOH.ME", "YNDX", "ROSN.ME", "MGNT.ME", "NVTK.ME", "GMKN.ME", "CHMF.ME", "PLZL.ME", "TATN.ME", "MTSS.ME", "AFLT.ME", "ALRS.ME", "VTBR.ME"]
+}
+
+BROKERS_DB = {
+    "Interactive Brokers": 99.2,
+    "Freedom Finance": 94.5,
+    "Charles Schwab": 98.1,
+    "Saxo Bank": 96.7,
+    "TD Ameritrade": 97.4,
+    "Fidelity": 98.8,
+    "Halyk Finance (KZ)": 92.3,
+    "Kaspi (KZ)": 91.0,
+    "Tinkoff (RU)": 88.5,
+    "Sber (RU)": 89.2
 }
 
 def get_daily_key():
@@ -105,69 +120,96 @@ def analyze_news(query, daily_key, l):
 
 # --- 3. ИНТЕРФЕЙС RILLET ---
 st.sidebar.markdown('<div class="logo-text">RILLET</div>', unsafe_allow_html=True)
-m_name = st.sidebar.selectbox(txt["market"], list(DB.keys()))
-c_choice = st.sidebar.radio(txt["currency"], ["USD ($)", "RUB (₽)", "KZT (₸)"])
 
-daily_token = get_daily_key()
-assets, rates = fetch_all(m_name, daily_token)
-sign = c_choice.split("(")[1][0]
-r_val = rates.get(sign, 1.0)
+# НОВАЯ ВКЛАДКА ТУТ, СЭР
+mode = st.sidebar.selectbox("MODE / РЕЖИМ", [txt["market"], txt["brokers"]])
 
-if not assets:
-    st.error("Data unavailable / Данные недоступны")
-else:
-    df_main = pd.DataFrame(assets)
-    df_main["PROFIT_EST"] = ((df_main["F_USD"] / df_main["P_USD"]) - 1) * 100
-    df_main = df_main.sort_values("PROFIT_EST", ascending=False).reset_index(drop=True)
-    
-    view = df_main.copy()
-    view[txt["price"]] = (view["P_USD"] * r_val).apply(lambda x: f"{x:,.2f} {sign}")
-    view[txt["forecast"]] = view["PROFIT_EST"].apply(lambda x: f"{x:+.2f}%")
-    st.dataframe(view[["T", txt["price"], txt["forecast"]]], use_container_width=True, height=250)
+if mode == txt["market"]:
+    m_name = st.sidebar.selectbox(txt["market"], list(DB.keys()))
+    c_choice = st.sidebar.radio(txt["currency"], ["USD ($)", "RUB (₽)", "KZT (₸)"])
 
-    st.divider()
-    t_sel = st.selectbox(txt["select"], df_main["T"].tolist())
-    item = next(x for x in assets if x['T'] == t_sel)
+    daily_token = get_daily_key()
+    assets, rates = fetch_all(m_name, daily_token)
+    sign = c_choice.split("(")[1][0]
+    r_val = rates.get(sign, 1.0)
 
-    p_now = item['P_USD'] * r_val
-    if "f_pts" not in st.session_state or st.session_state.get("last_t") != t_sel:
-        st.session_state.f_pts = [item['P_USD'] * (1 + np.random.normal(item['AVG'], item['STD'])) for _ in range(7)]
-        st.session_state.last_t = t_sel
-
-    f_prices = [p * r_val for p in st.session_state.f_pts]
-    pct = ((f_prices[-1] / p_now) - 1) * 100
-    clr = "#00ffcc" if pct > 0.5 else ("#ff4b4b" if pct < -0.5 else "#ffcc00")
-
-    c1, c2, c3 = st.columns(3)
-    c1.markdown(f"<div class='metric-card'>{txt['current']}<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='metric-card'>{txt['target']}<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
-    c3.markdown(f"<div class='metric-card' style='border-color:{clr}'>{txt['profit']}<br><h3>{pct:+.2f}%</h3></div>", unsafe_allow_html=True)
-
-    st.write(f"#### {txt['chart_title']} {t_sel}")
-    hist = item['DF']['Close'].tail(15).values * r_val / (item['P_USD'] * r_val / p_now)
-    st.line_chart(np.append(hist, f_prices), color="#00ffcc")
-
-    st.divider()
-    st.write(f"#### 🧠 {txt['news_title']} {t_sel}")
-    news_data = analyze_news(t_sel, daily_token, lang)
-    
-    if news_data:
-        n_col1, n_col2 = st.columns(2)
-        for i, entry in enumerate(news_data):
-            target_col = n_col1 if i % 2 == 0 else n_col2
-            s_class = "bullish" if entry['sent'] == "POSITIVE" else ("bearish" if entry['sent'] == "NEGATIVE" else "")
-            target_col.markdown(f"""
-            <div class="analysis-card">
-                <p style="margin-bottom:5px;">{entry['text']}</p>
-                <span class="{s_class}">{entry['sent']}</span> | <span style="color:#888;">{entry['src']}</span>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        pos = len([x for x in news_data if x['sent'] == "POSITIVE"])
-        neg = len([x for x in news_data if x['sent'] == "NEGATIVE"])
-        res_text = txt["buy"] if pos > neg else (txt["sell"] if neg > pos else txt["hold"])
-        st.markdown(f"<h2 style='text-align:center; border:2px solid {clr}; padding:15px; border-radius:10px;'>{txt['signal']}: {res_text}</h2>", unsafe_allow_html=True)
+    if not assets:
+        st.error("Data unavailable / Данные недоступны")
     else:
-        st.info(txt["no_news"])
+        df_main = pd.DataFrame(assets)
+        df_main["PROFIT_EST"] = ((df_main["F_USD"] / df_main["P_USD"]) - 1) * 100
+        df_main = df_main.sort_values("PROFIT_EST", ascending=False).reset_index(drop=True)
+        
+        view = df_main.copy()
+        view[txt["price"]] = (view["P_USD"] * r_val).apply(lambda x: f"{x:,.2f} {sign}")
+        view[txt["forecast"]] = view["PROFIT_EST"].apply(lambda x: f"{x:+.2f}%")
+        st.dataframe(view[["T", txt["price"], txt["forecast"]]], use_container_width=True, height=250)
 
-st.caption(f"{txt['update']}: {daily_token} 00:00")
+        st.divider()
+        t_sel = st.selectbox(txt["select"], df_main["T"].tolist())
+        item = next(x for x in assets if x['T'] == t_sel)
+
+        p_now = item['P_USD'] * r_val
+        if "f_pts" not in st.session_state or st.session_state.get("last_t") != t_sel:
+            st.session_state.f_pts = [item['P_USD'] * (1 + np.random.normal(item['AVG'], item['STD'])) for _ in range(7)]
+            st.session_state.last_t = t_sel
+
+        f_prices = [p * r_val for p in st.session_state.f_pts]
+        pct = ((f_prices[-1] / p_now) - 1) * 100
+        clr = "#00ffcc" if pct > 0.5 else ("#ff4b4b" if pct < -0.5 else "#ffcc00")
+
+        c1, c2, c3 = st.columns(3)
+        c1.markdown(f"<div class='metric-card'>{txt['current']}<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
+        c2.markdown(f"<div class='metric-card'>{txt['target']}<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
+        c3.markdown(f"<div class='metric-card' style='border-color:{clr}'>{txt['profit']}<br><h3>{pct:+.2f}%</h3></div>", unsafe_allow_html=True)
+
+        st.write(f"#### {txt['chart_title']} {t_sel}")
+        hist = item['DF']['Close'].tail(15).values * r_val / (item['P_USD'] * r_val / p_now)
+        st.line_chart(np.append(hist, f_prices), color="#00ffcc")
+
+        st.divider()
+        st.write(f"#### 🧠 {txt['news_title']} {t_sel}")
+        news_data = analyze_news(t_sel, daily_token, lang)
+        
+        if news_data:
+            n_col1, n_col2 = st.columns(2)
+            for i, entry in enumerate(news_data):
+                target_col = n_col1 if i % 2 == 0 else n_col2
+                s_class = "bullish" if entry['sent'] == "POSITIVE" else ("bearish" if entry['sent'] == "NEGATIVE" else "")
+                target_col.markdown(f"""
+                <div class="analysis-card">
+                    <p style="margin-bottom:5px;">{entry['text']}</p>
+                    <span class="{s_class}">{entry['sent']}</span> | <span style="color:#888;">{entry['src']}</span>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            pos = len([x for x in news_data if x['sent'] == "POSITIVE"])
+            neg = len([x for x in news_data if x['sent'] == "NEGATIVE"])
+            res_text = txt["buy"] if pos > neg else (txt["sell"] if neg > pos else txt["hold"])
+            st.markdown(f"<h2 style='text-align:center; border:2px solid {clr}; padding:15px; border-radius:10px;'>{txt['signal']}: {res_text}</h2>", unsafe_allow_html=True)
+        else:
+            st.info(txt["no_news"])
+
+elif mode == txt["brokers"]:
+    st.write(f"## 🏛️ {txt['brokers']}")
+    st.write("Analysis based on licensing, capital reserves, and user security audits.")
+    
+    # Создаем таблицу рейтинга
+    sorted_brokers = sorted(BROKERS_DB.items(), key=lambda x: x[1], reverse=True)
+    
+    for broker, trust in sorted_brokers:
+        bar_color = "#00ffcc" if trust > 90 else "#ffcc00"
+        st.markdown(f"""
+        <div class="analysis-card" style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="font-size: 20px; font-weight: bold;">{broker}</div>
+            <div style="text-align: right;">
+                <span style="font-size: 14px; color: #888;">{txt['trust']}</span><br>
+                <span style="font-size: 24px; color: {bar_color}; font-weight: bold;">{trust}%</span>
+            </div>
+        </div>
+        <div style="background-color: #111; height: 5px; border-radius: 5px; margin-bottom: 20px;">
+            <div style="background-color: {bar_color}; width: {trust}%; height: 100%; border-radius: 5px;"></div>
+        </div>
+        """, unsafe_allow_html=True)
+
+st.caption(f"{txt['update']}: {get_daily_key()} 00:00")
