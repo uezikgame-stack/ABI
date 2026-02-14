@@ -18,7 +18,8 @@ txt = {
         "buy": "✅ STRONG BUY", "sell": "❌ SELL / HOLD", "hold": "⚖️ NEUTRAL", "no_news": "No news found.",
         "update": "Data updated", "signal": "FINAL SIGNAL",
         "brokers": "TOP BROKERS", "trust": "TRUST LEVEL", "details": "DETAILS",
-        "history": "History", "founder": "Founder", "fact": "Fun Fact", "lawsuits": "Major Lawsuits"
+        "history": "History", "founder": "Founder", "fact": "Fun Fact", "lawsuits": "Major Lawsuits",
+        "license": "License", "fees": "Commissions", "withdraw": "Withdrawal", "assets": "Available Assets"
     },
     "RU": {
         "market": "РЫНОК", "currency": "ВАЛЮТА", "price": "ЦЕНА", "forecast": "ПРОГНОЗ %",
@@ -27,7 +28,8 @@ txt = {
         "buy": "✅ ПОКУПАТЬ", "sell": "❌ ПРОДАВАТЬ/ЖДАТЬ", "hold": "⚖️ УДЕРЖИВАТЬ", "no_news": "Новостей не найдено.",
         "update": "Обновление данных", "signal": "ИТОГОВЫЙ СИГНАЛ",
         "brokers": "ТОП БРОКЕРОВ", "trust": "УРОВЕНЬ ДОВЕРИЯ", "details": "ДЕТАЛИ",
-        "history": "История", "founder": "Основатель", "fact": "Интересный факт", "lawsuits": "Крупные иски"
+        "history": "История", "founder": "Основатель", "fact": "Интересный факт", "lawsuits": "Крупные иски",
+        "license": "Лицензия", "fees": "Комиссии", "withdraw": "Вывод", "assets": "Доступные активы"
     }
 }[lang]
 
@@ -50,6 +52,7 @@ st.markdown("""
     .bullish { color: #00ffcc !important; font-weight: bold; }
     .bearish { color: #ff4b4b !important; font-weight: bold; }
     .stExpander { border: 1px solid #00ffcc !important; background: transparent !important; }
+    .info-tag { background: #00ffcc22; padding: 2px 8px; border-radius: 5px; font-size: 0.8em; margin-right: 5px; border: 1px solid #00ffcc44; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -68,28 +71,44 @@ BROKERS_DB = {
         "history": "Founded in 1978 as T.P. & Co. Pioneered electronic trading.",
         "founder": "Thomas Peterffy",
         "fact": "Peterffy is known as the father of digital trading.",
-        "lawsuits": "Fined $38M in 2020 for AML (anti-money laundering) compliance failures."
+        "lawsuits": "Fined $38M in 2020 for AML compliance failures.",
+        "license": "SEC, FINRA, FCA, ASIC",
+        "fees": "From $0.005 per share",
+        "withdraw": "1-3 Days",
+        "assets": "Stocks, Options, Futures, Crypto, Bonds"
     },
     "Freedom Finance": {
         "trust": 94.5,
         "history": "Part of Freedom Holding Corp, listed on NASDAQ.",
         "founder": "Timur Turlov",
         "fact": "The only broker from Central Asia listed on NASDAQ.",
-        "lawsuits": "Under short-seller attacks (Hindenburg Research), but successfully passed audits."
+        "lawsuits": "Survived Hindenburg Research short-seller attack with clean audits.",
+        "license": "SEC, CySEC, AFSA",
+        "fees": "0.02% per trade (varies by plan)",
+        "withdraw": "Instant to Freedom Card / 1-2 Days bank",
+        "assets": "Stocks, IPO Access, ETFs, Bonds"
     },
     "Tinkoff (RU)": {
         "trust": 88.5,
-        "history": "Started as a credit card company, became a huge fintech ecosystem.",
+        "history": "Revolutionized retail investing in Russia with a mobile-first approach.",
         "founder": "Oleg Tinkov",
-        "fact": "One of the world's largest digital banks without physical branches.",
-        "lawsuits": "Heavy sanctions-related issues and ownership change in 2022-2023."
+        "fact": "World's largest digital-only bank in terms of customers.",
+        "lawsuits": "Faced legal battles regarding ownership transfer in 2022.",
+        "license": "Central Bank of Russia",
+        "fees": "0.3% (Basic) to 0.025% (Premium)",
+        "withdraw": "Instant 24/7",
+        "assets": "Russian Stocks, Currency, Precious Metals"
     },
     "Halyk Finance (KZ)": {
         "trust": 92.3,
-        "history": "Investment arm of the largest bank in Kazakhstan.",
+        "history": "Investment arm of the largest financial group in Kazakhstan.",
         "founder": "Halyk Bank Group",
-        "fact": "Oldest financial institution in Kazakhstan with over 100 years of history.",
-        "lawsuits": "Local regulatory fines for reporting delays, no major global fraud cases."
+        "fact": "Manages significant part of national pension assets.",
+        "lawsuits": "Minor regulatory fines for administrative delays.",
+        "license": "ARDFM (Kazakhstan)",
+        "fees": "0.02% - 0.05% on KASE/AIX",
+        "withdraw": "1 Business Day",
+        "assets": "Local Stocks (KASE/AIX), International ETFs"
     }
 }
 
@@ -146,12 +165,10 @@ mode = st.sidebar.selectbox("MODE / РЕЖИМ", [txt["market"], txt["brokers"]]
 if mode == txt["market"]:
     m_name = st.sidebar.selectbox(txt["market"], list(DB.keys()))
     c_choice = st.sidebar.radio(txt["currency"], ["USD ($)", "RUB (₽)", "KZT (₸)"])
-
     daily_token = get_daily_key()
     assets, rates = fetch_all(m_name, daily_token)
     sign = c_choice.split("(")[1][0]
     r_val = rates.get(sign, 1.0)
-
     if not assets:
         st.error("Data unavailable / Данные недоступны")
     else:
@@ -209,20 +226,31 @@ elif mode == txt["brokers"]:
         bar_color = "#00ffcc" if trust > 90 else "#ffcc00"
         
         st.markdown(f"""
-        <div class="analysis-card" style="display: flex; justify-content: space-between; align-items: center; margin-bottom:0px; border-bottom:none; border-radius:10px 10px 0 0;">
-            <div style="font-size: 20px; font-weight: bold;">{broker}</div>
-            <div style="text-align: right;">
-                <span style="font-size: 14px; color: #888;">{txt['trust']}</span><br>
-                <span style="font-size: 24px; color: {bar_color}; font-weight: bold;">{trust}%</span>
+        <div class="analysis-card" style="margin-bottom:0px; border-bottom:none; border-radius:10px 10px 0 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-size: 20px; font-weight: bold;">{broker}</div>
+                <div style="text-align: right;">
+                    <span style="font-size: 14px; color: #888;">{txt['trust']}</span><br>
+                    <span style="font-size: 24px; color: {bar_color}; font-weight: bold;">{trust}%</span>
+                </div>
+            </div>
+            <div style="margin-top:10px;">
+                <span class="info-tag">⚖️ {info['license']}</span>
+                <span class="info-tag">💰 {info['fees']}</span>
+                <span class="info-tag">⏱️ {info['withdraw']}</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
         
         with st.expander(txt["details"]):
-            st.markdown(f"**📜 {txt['history']}:** {info['history']}")
-            st.markdown(f"**👤 {txt['founder']}:** {info['founder']}")
-            st.markdown(f"**💡 {txt['fact']}:** {info['fact']}")
-            st.markdown(f"**⚖️ {txt['lawsuits']}:** {info['lawsuits']}")
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.markdown(f"**📜 {txt['history']}:** {info['history']}")
+                st.markdown(f"**👤 {txt['founder']}:** {info['founder']}")
+                st.markdown(f"**🏗️ {txt['assets']}:** {info['assets']}")
+            with col_b:
+                st.markdown(f"**💡 {txt['fact']}:** {info['fact']}")
+                st.markdown(f"**⚖️ {txt['lawsuits']}:** <span style='color:#ff4b4b;'>{info['lawsuits']}</span>", unsafe_allow_html=True)
             
         st.markdown(f"""
         <div style="background-color: #111; height: 5px; border-radius: 5px; margin-bottom: 25px;">
