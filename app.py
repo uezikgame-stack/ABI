@@ -17,7 +17,8 @@ txt = {
         "profit": "EST. PROFIT", "chart_title": "FORECAST CHART", "news_title": "INFO-FIELD ANALYSIS",
         "buy": "✅ STRONG BUY", "sell": "❌ SELL / HOLD", "hold": "⚖️ NEUTRAL", "no_news": "No news found.",
         "update": "Data updated", "signal": "FINAL SIGNAL",
-        "brokers": "TOP BROKERS", "trust": "TRUST LEVEL"
+        "brokers": "TOP BROKERS", "trust": "TRUST LEVEL", "details": "DETAILS",
+        "history": "History", "founder": "Founder", "fact": "Fun Fact", "lawsuits": "Major Lawsuits"
     },
     "RU": {
         "market": "РЫНОК", "currency": "ВАЛЮТА", "price": "ЦЕНА", "forecast": "ПРОГНОЗ %",
@@ -25,7 +26,8 @@ txt = {
         "profit": "ПРОФИТ (%)", "chart_title": "ГРАФИК ПРОГНОЗА", "news_title": "АНАЛИЗ ИНФОПОЛЯ",
         "buy": "✅ ПОКУПАТЬ", "sell": "❌ ПРОДАВАТЬ/ЖДАТЬ", "hold": "⚖️ УДЕРЖИВАТЬ", "no_news": "Новостей не найдено.",
         "update": "Обновление данных", "signal": "ИТОГОВЫЙ СИГНАЛ",
-        "brokers": "ТОП БРОКЕРОВ", "trust": "УРОВЕНЬ ДОВЕРИЯ"
+        "brokers": "ТОП БРОКЕРОВ", "trust": "УРОВЕНЬ ДОВЕРИЯ", "details": "ДЕТАЛИ",
+        "history": "История", "founder": "Основатель", "fact": "Интересный факт", "lawsuits": "Крупные иски"
     }
 }[lang]
 
@@ -47,6 +49,7 @@ st.markdown("""
     .analysis-card { background: rgba(0, 255, 204, 0.05); border: 1px solid #00ffcc; padding: 15px; margin-bottom: 10px; border-radius: 10px; }
     .bullish { color: #00ffcc !important; font-weight: bold; }
     .bearish { color: #ff4b4b !important; font-weight: bold; }
+    .stExpander { border: 1px solid #00ffcc !important; background: transparent !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -60,16 +63,34 @@ DB = {
 }
 
 BROKERS_DB = {
-    "Interactive Brokers": 99.2,
-    "Freedom Finance": 94.5,
-    "Charles Schwab": 98.1,
-    "Saxo Bank": 96.7,
-    "TD Ameritrade": 97.4,
-    "Fidelity": 98.8,
-    "Halyk Finance (KZ)": 92.3,
-    "Kaspi (KZ)": 91.0,
-    "Tinkoff (RU)": 88.5,
-    "Sber (RU)": 89.2
+    "Interactive Brokers": {
+        "trust": 99.2,
+        "history": "Founded in 1978 as T.P. & Co. Pioneered electronic trading.",
+        "founder": "Thomas Peterffy",
+        "fact": "Peterffy is known as the father of digital trading.",
+        "lawsuits": "Fined $38M in 2020 for AML (anti-money laundering) compliance failures."
+    },
+    "Freedom Finance": {
+        "trust": 94.5,
+        "history": "Part of Freedom Holding Corp, listed on NASDAQ.",
+        "founder": "Timur Turlov",
+        "fact": "The only broker from Central Asia listed on NASDAQ.",
+        "lawsuits": "Under short-seller attacks (Hindenburg Research), but successfully passed audits."
+    },
+    "Tinkoff (RU)": {
+        "trust": 88.5,
+        "history": "Started as a credit card company, became a huge fintech ecosystem.",
+        "founder": "Oleg Tinkov",
+        "fact": "One of the world's largest digital banks without physical branches.",
+        "lawsuits": "Heavy sanctions-related issues and ownership change in 2022-2023."
+    },
+    "Halyk Finance (KZ)": {
+        "trust": 92.3,
+        "history": "Investment arm of the largest bank in Kazakhstan.",
+        "founder": "Halyk Bank Group",
+        "fact": "Oldest financial institution in Kazakhstan with over 100 years of history.",
+        "lawsuits": "Local regulatory fines for reporting delays, no major global fraud cases."
+    }
 }
 
 def get_daily_key():
@@ -87,7 +108,6 @@ def fetch_all(m_name, daily_key):
             r_map["₸"] = float(rates_raw["KZT=X"].dropna().iloc[-1])
         except: pass
         eur_usd = float(rates_raw["EURUSD=X"].dropna().iloc[-1]) if not rates_raw["EURUSD=X"].dropna().empty else 1.08
-        
         clean = []
         for t in tickers:
             try:
@@ -121,7 +141,6 @@ def analyze_news(query, daily_key, l):
 # --- 3. ИНТЕРФЕЙС RILLET ---
 st.sidebar.markdown('<div class="logo-text">RILLET</div>', unsafe_allow_html=True)
 
-# НОВАЯ ВКЛАДКА ТУТ, СЭР
 mode = st.sidebar.selectbox("MODE / РЕЖИМ", [txt["market"], txt["brokers"]])
 
 if mode == txt["market"]:
@@ -139,38 +158,30 @@ if mode == txt["market"]:
         df_main = pd.DataFrame(assets)
         df_main["PROFIT_EST"] = ((df_main["F_USD"] / df_main["P_USD"]) - 1) * 100
         df_main = df_main.sort_values("PROFIT_EST", ascending=False).reset_index(drop=True)
-        
         view = df_main.copy()
         view[txt["price"]] = (view["P_USD"] * r_val).apply(lambda x: f"{x:,.2f} {sign}")
         view[txt["forecast"]] = view["PROFIT_EST"].apply(lambda x: f"{x:+.2f}%")
         st.dataframe(view[["T", txt["price"], txt["forecast"]]], use_container_width=True, height=250)
-
         st.divider()
         t_sel = st.selectbox(txt["select"], df_main["T"].tolist())
         item = next(x for x in assets if x['T'] == t_sel)
-
         p_now = item['P_USD'] * r_val
         if "f_pts" not in st.session_state or st.session_state.get("last_t") != t_sel:
             st.session_state.f_pts = [item['P_USD'] * (1 + np.random.normal(item['AVG'], item['STD'])) for _ in range(7)]
             st.session_state.last_t = t_sel
-
         f_prices = [p * r_val for p in st.session_state.f_pts]
         pct = ((f_prices[-1] / p_now) - 1) * 100
         clr = "#00ffcc" if pct > 0.5 else ("#ff4b4b" if pct < -0.5 else "#ffcc00")
-
         c1, c2, c3 = st.columns(3)
         c1.markdown(f"<div class='metric-card'>{txt['current']}<br><h3>{p_now:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
         c2.markdown(f"<div class='metric-card'>{txt['target']}<br><h3>{f_prices[-1]:,.2f} {sign}</h3></div>", unsafe_allow_html=True)
         c3.markdown(f"<div class='metric-card' style='border-color:{clr}'>{txt['profit']}<br><h3>{pct:+.2f}%</h3></div>", unsafe_allow_html=True)
-
         st.write(f"#### {txt['chart_title']} {t_sel}")
         hist = item['DF']['Close'].tail(15).values * r_val / (item['P_USD'] * r_val / p_now)
         st.line_chart(np.append(hist, f_prices), color="#00ffcc")
-
         st.divider()
         st.write(f"#### 🧠 {txt['news_title']} {t_sel}")
         news_data = analyze_news(t_sel, daily_token, lang)
-        
         if news_data:
             n_col1, n_col2 = st.columns(2)
             for i, entry in enumerate(news_data):
@@ -182,7 +193,6 @@ if mode == txt["market"]:
                     <span class="{s_class}">{entry['sent']}</span> | <span style="color:#888;">{entry['src']}</span>
                 </div>
                 """, unsafe_allow_html=True)
-            
             pos = len([x for x in news_data if x['sent'] == "POSITIVE"])
             neg = len([x for x in news_data if x['sent'] == "NEGATIVE"])
             res_text = txt["buy"] if pos > neg else (txt["sell"] if neg > pos else txt["hold"])
@@ -192,22 +202,30 @@ if mode == txt["market"]:
 
 elif mode == txt["brokers"]:
     st.write(f"## 🏛️ {txt['brokers']}")
-    st.write("Analysis based on licensing, capital reserves, and user security audits.")
+    sorted_brokers = sorted(BROKERS_DB.items(), key=lambda x: x[1]['trust'], reverse=True)
     
-    # Создаем таблицу рейтинга
-    sorted_brokers = sorted(BROKERS_DB.items(), key=lambda x: x[1], reverse=True)
-    
-    for broker, trust in sorted_brokers:
+    for broker, info in sorted_brokers:
+        trust = info['trust']
         bar_color = "#00ffcc" if trust > 90 else "#ffcc00"
+        
         st.markdown(f"""
-        <div class="analysis-card" style="display: flex; justify-content: space-between; align-items: center;">
+        <div class="analysis-card" style="display: flex; justify-content: space-between; align-items: center; margin-bottom:0px; border-bottom:none; border-radius:10px 10px 0 0;">
             <div style="font-size: 20px; font-weight: bold;">{broker}</div>
             <div style="text-align: right;">
                 <span style="font-size: 14px; color: #888;">{txt['trust']}</span><br>
                 <span style="font-size: 24px; color: {bar_color}; font-weight: bold;">{trust}%</span>
             </div>
         </div>
-        <div style="background-color: #111; height: 5px; border-radius: 5px; margin-bottom: 20px;">
+        """, unsafe_allow_html=True)
+        
+        with st.expander(txt["details"]):
+            st.markdown(f"**📜 {txt['history']}:** {info['history']}")
+            st.markdown(f"**👤 {txt['founder']}:** {info['founder']}")
+            st.markdown(f"**💡 {txt['fact']}:** {info['fact']}")
+            st.markdown(f"**⚖️ {txt['lawsuits']}:** {info['lawsuits']}")
+            
+        st.markdown(f"""
+        <div style="background-color: #111; height: 5px; border-radius: 5px; margin-bottom: 25px;">
             <div style="background-color: {bar_color}; width: {trust}%; height: 100%; border-radius: 5px;"></div>
         </div>
         """, unsafe_allow_html=True)
