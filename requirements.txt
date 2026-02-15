@@ -3,4 +3,6 @@ yfinance
 pandas
 numpy
 gnews
-
+tensorflow
+scikit-learn
+xgboost
