@@ -3,143 +3,145 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from gnews import GNews
-from datetime import datetime, timedelta
-import xgboost as xgb
+from datetime import datetime
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
+from sklearn.preprocessing import MinMaxScaler
 
-# --- 1. НАСТРОЙКИ И СТИЛЬ ---
-st.set_page_config(page_title="Rillet ML Full", layout="wide")
+# --- 1. СТИЛЬ И БРЕНДИНГ RILLET ---
+st.set_page_config(page_title="Rillet", layout="wide")
 
-lang = st.sidebar.radio("ЯЗЫК / LANGUAGE", ["RU", "EN"])
+# --- ЛОКАЛИЗАЦИЯ ---
+lang = st.sidebar.radio("LANGUAGE / ЯЗЫК", ["EN", "RU"])
 txt = {
-    "RU": {
-        "market": "АНАЛИЗ РЫНКА", "select": "ВЫБЕРИ АКТИВ:", "current": "ТЕКУЩАЯ ЦЕНА",
-        "target": "ПРОГНОЗ (7 ДНЕЙ)", "profit": "ОЖИДАЕМЫЙ ДОХОД", "chart": "ДИНАМИКА И ML ПРОГНОЗ ПО ДНЯМ",
-        "news": "НОВОСТИ ПО АКТИВУ", "signal": "СИГНАЛ", "buy": "ПОКУПАТЬ", "sell": "ПРОДАВАТЬ",
-        "hold": "ЖДАТЬ", "brokers": "ТОП-15 БРОКЕРОВ", "trust": "ДОВЕРИЕ", "details": "ДЕТАЛИ"
-    },
     "EN": {
-        "market": "MARKET ANALYSIS", "select": "SELECT ASSET:", "current": "CURRENT PRICE",
-        "target": "FORECAST (7 DAYS)", "profit": "EST. PROFIT", "chart": "DAILY DYNAMICS & ML FORECAST",
-        "news": "ASSET SPECIFIC NEWS", "signal": "SIGNAL", "buy": "BUY", "sell": "SELL",
-        "hold": "HOLD", "brokers": "TOP 15 BROKERS", "trust": "TRUST", "details": "DETAILS"
+        "market": "MARKET", "currency": "CURRENCY", "price": "PRICE", "forecast": "FORECAST %",
+        "select": "SELECT ASSET:", "current": "CURRENT PRICE", "target": "TARGET (7d)",
+        "profit": "EST. PROFIT", "chart_title": "NEURAL NETWORK FORECAST (LSTM)", "news_title": "INFO-FIELD ANALYSIS",
+        "buy": "✅ STRONG BUY", "sell": "❌ SELL / HOLD", "hold": "⚖️ NEUTRAL", "no_news": "No news found.",
+        "update": "Data updated", "signal": "FINAL SIGNAL",
+        "brokers": "TOP BROKERS", "trust": "TRUST LEVEL", "details": "DETAILS",
+        "history": "History", "founder": "Founder", "fact": "Fun Fact", "lawsuits": "Major Lawsuits",
+        "license": "License", "fees": "Commissions", "withdraw": "Withdrawal", "assets": "Available Assets"
+    },
+    "RU": {
+        "market": "РЫНОК", "currency": "ВАЛЮТА", "price": "ЦЕНА", "forecast": "ПРОГНОЗ %",
+        "select": "ВЫБЕРИ АКТИВ:", "current": "ТЕКУЩАЯ", "target": "ЦЕЛЬ (7д)",
+        "profit": "ПРОФИТ (%)", "chart_title": "НЕЙРОСЕТЕВОЙ ПРОГНОЗ (LSTM)", "news_title": "АНАЛИЗ ИНФОПОЛЯ",
+        "buy": "✅ ПОКУПАТЬ", "sell": "❌ ПРОДАВАТЬ/ЖДАТЬ", "hold": "⚖️ УДЕРЖИВАТЬ", "no_news": "Новостей не найдено.",
+        "update": "Обновление данных", "signal": "ИТОГОВЫЙ СИГНАЛ",
+        "brokers": "ТОП БРОКЕРОВ", "trust": "УРОВЕНЬ ДОВЕРИЯ", "details": "ДЕТАЛИ",
+        "history": "История", "founder": "Основатель", "fact": "Интересный факт", "lawsuits": "Крупные иски",
+        "license": "Лицензия", "fees": "Комиссии", "withdraw": "Вывод", "assets": "Активы"
     }
 }[lang]
 
-st.markdown("""<style>
-    .stApp { background-color: #020508; color: #00ffcc; }
-    .metric-card { background: rgba(0, 255, 204, 0.05); border: 1px solid #00ffcc; padding: 20px; border-radius: 12px; text-align: center; }
-    .news-card { background: rgba(255, 255, 255, 0.03); border-left: 3px solid #00ffcc; padding: 10px; margin-bottom: 5px; }
+st.markdown("""
+    <style>
+    .stApp { background-color: #020508 !important; color: #00ffcc; }
+    .metric-card { background: rgba(0, 0, 0, 0.9); border: 1px solid #00ffcc; padding: 15px; text-align: center; border-radius: 10px; }
     h1, h2, h3, p, span, label { color: #00ffcc !important; }
-</style>""", unsafe_allow_html=True)
+    .logo-text { font-size: 42px; font-weight: bold; text-align: center; color: #00ffcc; border-bottom: 2px solid #00ffcc; margin-bottom: 20px; }
+    .analysis-card { background: rgba(0, 255, 204, 0.05); border: 1px solid #00ffcc; padding: 15px; margin-bottom: 10px; border-radius: 10px; }
+    .info-tag { background: #00ffcc22; padding: 2px 8px; border-radius: 5px; font-size: 0.8em; margin-right: 5px; border: 1px solid #00ffcc44; color: #00ffcc; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- 2. БАЗА ДАННЫХ (БРОКЕРЫ И КИТАЙ) ---
+# --- 2. БАЗА ДАННЫХ АКТИВОВ И БРОКЕРОВ ---
 DB = {
-    "CHINA": ["BABA", "TCEHY", "PDD", "JD", "BIDU", "NIO", "LI", "BYDDY", "BILI", "NTES"],
-    "USA": ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "AMD", "NFLX", "GOOGL"],
-    "RUSSIA": ["SBER.ME", "GAZP.ME", "LKOH.ME", "YNDX", "ROSN.ME"],
-    "KAZAKHSTAN": ["KMGZ.KZ", "HSBK.KZ", "KSPI.KZ", "KASE.KZ"]
+    "USA": ["AAPL", "NVDA", "TSLA"],
+    "KAZAKHSTAN": ["KCZ.L", "HSBK.KZ"],
+    "RUSSIA": ["SBER.ME", "YNDX"]
 }
 
-BROKERS_LIST = {
-    "Interactive Brokers": {"trust": 99.2, "lic": "SEC, FCA", "fees": "Low", "desc": "Лидер мирового рынка."},
-    "Fidelity": {"trust": 98.5, "lic": "FINRA", "fees": "$0", "desc": "Надежность и пенсионные планы."},
-    "Charles Schwab": {"trust": 98.0, "lic": "SEC", "fees": "$0", "desc": "Крупнейший брокер США."},
-    "Saxo Bank": {"trust": 96.0, "lic": "Danish FSA", "fees": "High", "desc": "Европейский стандарт."},
-    "Freedom Finance": {"trust": 94.5, "lic": "SEC, AFSA", "fees": "Mid", "desc": "Доступ к IPO и рынку СНГ."},
-    "Swissquote": {"trust": 95.5, "lic": "FINMA", "fees": "High", "desc": "Швейцарский банк."},
-    "Vantage": {"trust": 93.8, "lic": "ASIC", "fees": "Low", "desc": "Лучший ECN брокер."},
-    "E*TRADE": {"trust": 93.0, "lic": "SEC", "fees": "$0", "desc": "Часть Morgan Stanley."},
-    "Pepperstone": {"trust": 92.5, "lic": "FCA", "fees": "Spreads", "desc": "Скорость исполнения."},
-    "Exante": {"trust": 91.2, "lic": "CySEC", "fees": "0.02%", "desc": "Единый счет на все рынки."},
-    "Webull": {"trust": 90.0, "lic": "SEC", "fees": "$0", "desc": "Отличные графики."},
-    "Tiger Brokers": {"trust": 89.5, "lic": "MAS", "fees": "Low", "desc": "Лидер Азии."},
-    "Robinhood": {"trust": 88.0, "lic": "SEC", "fees": "$0", "desc": "Для нового поколения."},
-    "AvaTrade": {"trust": 87.5, "lic": "CBI", "fees": "Spreads", "desc": "Фокус на CFD."},
-    "BlackRock": {"trust": 99.8, "lic": "Global", "fees": "Inst.", "desc": "Мировой гигант."}
+raw_brokers = {
+    "Interactive Brokers": {
+        "trust": 99.2, "founder": "Thomas Peterffy", "license": "SEC, FINRA", "fees": "0.005$/sh", "withdraw": "1-3d", "assets": "Global",
+        "history": {"EN": "Pioneered electronic trading.", "RU": "Пионеры электронного трейдинга."},
+        "fact": {"EN": "Father of digital trading.", "RU": "Основатель — отец цифровой торговли."},
+        "lawsuits": {"EN": "Fined in 2020.", "RU": "Штраф в 2020 году."}
+    }
 }
 
-# --- 3. ЯДРО (ML + НОВОСТИ) ---
-def get_daily_forecast(df):
-    try:
-        d = df[['Close']].copy()
-        d['lag'] = d['Close'].shift(1)
-        d['ma'] = d['Close'].rolling(5).mean()
-        d = d.dropna()
-        model = xgb.XGBRegressor(n_estimators=100, learning_rate=0.05)
-        model.fit(d[['lag', 'ma']], d['Close'])
+# --- 3. НЕЙРОСЕТЕВАЯ МОДЕЛЬ (LSTM) ---
+def predict_lstm(data_series, days=7):
+    # Подготовка данных
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaled_data = scaler.fit_transform(data_series.values.reshape(-1, 1))
+    
+    # Создание обучающей выборки (окно 5 дней)
+    window = 5
+    X, y = [], []
+    for i in range(window, len(scaled_data)):
+        X.append(scaled_data[i-window:i, 0])
+        y.append(scaled_data[i, 0])
+    X, y = np.array(X), np.array(y)
+    X = np.reshape(X, (X.shape[0], X.shape[1], 1))
+
+    # Сборка легкой модели LSTM
+    model = Sequential([
+        LSTM(units=32, return_sequences=False, input_shape=(window, 1)),
+        Dense(units=1)
+    ])
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    model.fit(X, y, epochs=10, batch_size=1, verbose=0) # Быстрое обучение
+
+    # Прогноз на 7 дней
+    last_window = scaled_data[-window:].reshape(1, window, 1)
+    predictions = []
+    current_batch = last_window
+    
+    for _ in range(days):
+        pred = model.predict(current_batch, verbose=0)
+        predictions.append(pred[0,0])
+        current_batch = np.append(current_batch[:, 1:, :], [[pred[0]]], axis=1)
         
-        preds = []
-        last_p = d['Close'].iloc[-1]
-        last_m = d['ma'].iloc[-1]
-        for _ in range(7):
-            p = model.predict(np.array([[last_p, last_m]]))[0]
-            preds.append(p)
-            last_p = p
-        return preds
-    except: return None
+    return scaler.inverse_transform(np.array(predictions).reshape(-1, 1)).flatten()
 
-def fetch_asset_news(ticker, l):
-    try:
-        gn = GNews(language='ru' if l == "RU" else 'en', max_results=4, period='7d')
-        return gn.get_news(f"{ticker} stock")
-    except: return []
+@st.cache_data(ttl=86400)
+def fetch_all(m_name, key):
+    tickers = DB[m_name]
+    data = yf.download(tickers, period="2mo", interval="1d", group_by='ticker', progress=False)
+    clean = []
+    for t in tickers:
+        df = data[t].dropna()
+        if not df.empty:
+            p_now = float(df['Close'].iloc[-1])
+            clean.append({"T": t, "P": p_now, "DF": df})
+    return clean
 
 # --- 4. ИНТЕРФЕЙС ---
-st.sidebar.markdown("<h1 style='text-align:center;'>RILLET ML</h1>", unsafe_allow_html=True)
-menu = st.sidebar.selectbox("МЕНЮ", [txt["market"], txt["brokers"]])
+st.sidebar.markdown('<div class="logo-text">RILLET</div>', unsafe_allow_html=True)
+mode = st.sidebar.selectbox("MODE", [txt["market"], txt["brokers"]])
 
-if menu == txt["market"]:
-    market_sec = st.sidebar.selectbox("СЕКТОР", list(DB.keys()))
-    ticker = st.selectbox(txt["select"], DB[market_sec])
+if mode == txt["market"]:
+    m_name = st.sidebar.selectbox(txt["market"], list(DB.keys()))
+    assets = fetch_all(m_name, datetime.now().strftime("%H"))
     
-    # Загрузка данных
-    df_raw = yf.download(ticker, period="6mo", interval="1d", progress=False, auto_adjust=True)
-    
-    if not df_raw.empty:
-        if isinstance(df_raw.columns, pd.MultiIndex): df_raw.columns = df_raw.columns.get_level_values(0)
-        df = df_raw[['Close']].dropna()
+    if assets:
+        t_sel = st.selectbox(txt["select"], [x['T'] for x in assets])
+        item = next(x for x in assets if x['T'] == t_sel)
         
-        with st.spinner('Анализ нейросетью...'):
-            forecast = get_daily_forecast(df)
-            news = fetch_asset_news(ticker, lang)
+        # Запуск нейросети
+        with st.spinner('Neural Network training...'):
+            f_prices = predict_lstm(item['DF']['Close'], days=7)
         
-        if forecast:
-            p_now = float(df['Close'].iloc[-1])
-            p_fut = float(forecast[-1])
-            pct = ((p_fut / p_now) - 1) * 100
-            
-            # Метрики
-            col1, col2, col3 = st.columns(3)
-            col1.markdown(f"<div class='metric-card'>{txt['current']}<br><h2>{p_now:,.2f} $</h2></div>", unsafe_allow_html=True)
-            col2.markdown(f"<div class='metric-card'>{txt['target']}<br><h2>{p_fut:,.2f} $</h2></div>", unsafe_allow_html=True)
-            color = "#00ffcc" if pct > 0 else "#ff4b4b"
-            col3.markdown(f"<div class='metric-card' style='border-color:{color}'>{txt['profit']}<br><h2>{pct:+.2f}%</h2></div>", unsafe_allow_html=True)
-            
-            # Построение графика по дням
-            st.write(f"### 📈 {txt['chart']} {ticker}")
-            last_dates = df.index[-30:]
-            future_dates = [last_dates[-1] + timedelta(days=i) for i in range(1, 8)]
-            
-            hist_series = pd.Series(df['Close'].tail(30).values, index=last_dates)
-            fore_series = pd.Series(forecast, index=future_dates)
-            
-            full_df = pd.DataFrame({"History": hist_series, "ML Forecast": fore_series})
-            st.line_chart(full_df)
-            
-            # Блок новостей по конкретной акции
-            st.write(f"### 📰 {txt['news']} ({ticker})")
-            if news:
-                for n in news:
-                    st.markdown(f"<div class='news-card'><b>{n['title']}</b><br><small>{n['published date']}</small></div>", unsafe_allow_html=True)
-            else:
-                st.write("Новостей по данному тикеру пока нет.")
+        p_now = item['P']
+        pct = ((f_prices[-1] / p_now) - 1) * 100
+        clr = "#00ffcc" if pct > 0 else "#ff4b4b"
 
-elif menu == txt["brokers"]:
-    st.write(f"## 🏛️ {txt['brokers']}")
-    for name, info in BROKERS_LIST.items():
-        with st.expander(f"{name} — {txt['trust']}: {info['trust']}%"):
-            st.write(f"**Лицензии:** {info['lic']}")
-            st.write(f"**Комиссии:** {info['fees']}")
-            st.write(f"**Описание:** {info['desc']}")
+        c1, c2, c3 = st.columns(3)
+        c1.markdown(f"<div class='metric-card'>{txt['current']}<br><h3>{p_now:,.2f}</h3></div>", unsafe_allow_html=True)
+        c2.markdown(f"<div class='metric-card'>{txt['target']}<br><h3>{f_prices[-1]:,.2f}</h3></div>", unsafe_allow_html=True)
+        c3.markdown(f"<div class='metric-card' style='border-color:{clr}'>{txt['profit']}<br><h3>{pct:+.2f}%</h3></div>", unsafe_allow_html=True)
 
-st.caption(f"Rillet ML Core 2026 | Обновлено: {datetime.now().strftime('%H:%M:%S')}")
+        st.write(f"#### {txt['chart_title']} {t_sel}")
+        hist = item['DF']['Close'].tail(15).values
+        st.line_chart(np.append(hist, f_prices), color="#00ffcc")
+
+elif mode == txt["brokers"]:
+    for b_name, b_info in raw_brokers.items():
+        st.write(f"### {b_name} - {b_info['trust']}%")
+        with st.expander(txt["details"]):
+            st.write(f"{txt['history']}: {b_info['history'][lang]}")
