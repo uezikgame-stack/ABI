@@ -3,5 +3,4 @@ yfinance
 pandas
 numpy
 gnews
-xgboost
-scikit-learn
+
